@@ -10,7 +10,11 @@ export class Generator {
       y,
       width,
       height,
-      options: shapeOptions,
+      options: {
+        ...shapeOptions,
+        strokeStyle: shapeOptions.strokeStyle || "black",
+        lineWidth: shapeOptions.lineWidth || 2,
+      },
     };
   }
 
@@ -23,7 +27,37 @@ export class Generator {
       y1,
       x2,
       y2,
-      options: shapeOptions,
+      options: {
+        ...shapeOptions,
+        strokeStyle: shapeOptions.strokeStyle || "black",
+        lineWidth: shapeOptions.lineWidth || 1,
+      },
+    };
+  }
+
+  ellipse(x1, y1, x2, y2, options = {}) {
+    const x = (x1 + x2) / 2;
+    const y = (y1 + y2) / 2;
+    const rX = Math.abs(x1 - x2) / 2;
+    const rY = Math.abs(y1 - y2) / 2;
+    const rotation = 0;
+    const startAngle = 0;
+    const endAngle = 2 * Math.PI;
+
+    return {
+      type: "ellipse",
+      x,
+      y,
+      rX,
+      rY,
+      rotation,
+      startAngle,
+      endAngle,
+      options: {
+        ...options,
+        strokeStyle: options.strokeStyle || "black",
+        lineWidth: options.lineWidth || 1,
+      },
     };
   }
 }
@@ -50,6 +84,9 @@ export class Drawer {
       case "line":
         this._drawLine(shape);
         break;
+      case "ellipse":
+        this._drawEllipse(shape);
+        break;
       default:
         throw new Error(`Unknown shape type: ${type}`);
     }
@@ -59,9 +96,9 @@ export class Drawer {
     const { x, y, width, height, options } = shape;
     this.ctx.beginPath();
 
-    this.ctx.fillStyle = '#000';
-    this.ctx.strokeStyle = '#000';
-    this.ctx.lineWidth = 1;
+    this.ctx.fillStyle = "#000";
+    this.ctx.strokeStyle = options.strokeStyle || "black";
+    this.ctx.lineWidth = options.lineWidth || 1;
 
     this.ctx.fillRect(x, y, width, height);
     this.ctx.strokeRect(x, y, width, height);
@@ -75,8 +112,21 @@ export class Drawer {
 
     this.ctx.moveTo(x1, y1);
     this.ctx.lineTo(x2, y2);
-    this.ctx.strokeStyle = "black";
-    this.ctx.lineWidth = 1;
+    this.ctx.strokeStyle = options.strokeStyle || "black";
+    this.ctx.lineWidth = options.lineWidth || 1;
+
+    this.ctx.stroke();
+  }
+
+  _drawEllipse(shape) {
+    const { x, y, rX, rY, rotation, startAngle, endAngle, options } = shape;
+    this.ctx.beginPath();
+
+    this.ctx.ellipse(x, y, rX, rY, rotation, startAngle, endAngle, false);
+
+    this.ctx.fillStyle = "#000";
+    this.ctx.strokeStyle = options.strokeStyle || "black";
+    this.ctx.lineWidth = options.lineWidth || 1;
 
     this.ctx.stroke();
   }

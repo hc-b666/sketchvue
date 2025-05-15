@@ -5,11 +5,12 @@ import { Drawer, Generator } from './Drawer';
 import { adjustElementCoordinates, adjustmentRequired } from './utils/coordinates';
 
 const canvas = ref(null);
+const textarea = ref(null);
 /**
  * @type {CanvasRenderingContext2D}
  */
 let ctx = null;
-const tools = ['selection', 'rectangle', 'line'];
+const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text'];
 /**
  * @type {Generator}
  */
@@ -25,6 +26,7 @@ const startPanMousePos = ref({ x: 0, y: 0 });
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
   renderCanvas();
+  autoFocusTextarea();
 
   canvas.value.addEventListener('mousedown', handleMousedown);
   canvas.value.addEventListener('mousemove', handleMousemove);
@@ -44,6 +46,7 @@ onUnmounted(() => {
 });
 
 watch([elements, action, selectedElement, panOffset], renderCanvas, { deep: true });
+watch([action, selectedElement], autoFocusTextarea, { deep: true });
 
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
@@ -64,11 +67,22 @@ function renderCanvas() {
   const currentElements = elements.value;
   if (currentElements && Array.isArray(currentElements)) {
     currentElements.forEach((element) => {
+      if (action.value === 'writing' && selectedElement.value.id === element.id) return;
       drawElement(drawer, element);
     });
   }
 
   ctx.restore();
+}
+
+function autoFocusTextarea() {
+  if (textarea.value && action.value === 'writing') {
+    console.log('autofocus worked');
+    setTimeout(() => {
+      textarea.value.focus();
+      textarea.value = selectedElement.value.text;
+    }, 0);
+  }
 }
 
 /**
@@ -82,7 +96,13 @@ function drawElement(drawer, element) {
   switch (element.type) {
     case 'line':
     case 'rectangle':
+    case 'ellipse':
       drawer.draw(element.canvasShape);
+      break;
+    case 'text':
+      ctx.textBaseline = 'top';
+      ctx.font = '16px Arial';
+      ctx.fillText(element.text, element.x1, element.y1);
       break;
     default:
       console.error('Unknown element type:', element.type);
@@ -118,13 +138,34 @@ function createElement(id, x1, y1, x2, y2, type) {
         y2,
         canvasShape: rectShape,
       };
+    case 'ellipse':
+      const ellipesShape = generator.ellipse(x1, y1, x2, y2);
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        canvasShape: ellipesShape,
+      };
+    case 'text':
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        text: "",
+      };
     default:
       console.error('Unknown element type:', type);
       return null;
   }
 }
 
-function updateElement(id, x1, y1, x2, y2, type) {
+function updateElement(id, x1, y1, x2, y2, type, options = {}) {
   const currentElements = elements.value;
   if (!currentElements || !Array.isArray(currentElements)) return;
 
@@ -133,7 +174,18 @@ function updateElement(id, x1, y1, x2, y2, type) {
   switch (type) {
     case 'line':
     case 'rectangle':
+    case 'ellipse':
       elementsCopy[id] = createElement(id, x1, y1, x2, y2, type);
+      break;
+    case 'text':
+      const text = options.text || "";
+      const textWidth = ctx ? ctx.measureText(text).width : 100;
+      const textHeight = 16;
+
+      elementsCopy[id] = {
+        ...createElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type),
+        text,
+      };
       break;
     default:
       console.error('Unknown element type:', type);
@@ -141,7 +193,6 @@ function updateElement(id, x1, y1, x2, y2, type) {
 
   setElements(elementsCopy, true);
 }
-
 function getMouseCoordinates(e) {
   const clientX = e.clientX - panOffset.value.x;
   const clientY = e.clientY - panOffset.value.y;
@@ -178,6 +229,13 @@ function positionWithinElement(x, y, element) {
       const bottomright = nearPoint(x, y, x2, y2, 'br');
       const inside = (x >= x1 && x <= x2 && y >= y1 && y <= y2) ? 'inside' : null;
       return topleft || topright || bottomleft || bottomright || inside;
+    case 'ellipse':
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+      const radiusX = Math.abs(x2 - x1) / 2;
+      const radiusY = Math.abs(y2 - y1) / 2;
+      const ellipseInside = ((x - centerX) ** 2) / (radiusX ** 2) + ((y - centerY) ** 2) / (radiusY ** 2) <= 1;
+      return ellipseInside ? 'inside' : null;
     default:
       console.error('error in positionWithinElement');
       return null;
@@ -265,12 +323,16 @@ function handleMousedown(e) {
     setElements([...currentElements, element]);
     selectedElement.value = element;
 
-    action.value = 'drawing';
+    console.log(tool.value, selectedElement.value, elements.value)
+
+    action.value = tool.value === 'text' ? 'writing' : 'drawing';
   }
 }
 
 function handleMousemove(e) {
   const { clientX, clientY } = getMouseCoordinates(e);
+
+  console.log(action.value)
 
   if (action.value === 'panning') {
     const deltaX = e.clientX - startPanMousePos.value.x;
@@ -301,7 +363,8 @@ function handleMousemove(e) {
     const height = y2 - y1;
     const newX1 = clientX - offsetX;
     const newY1 = clientY - offsetY;
-    updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type);
+    const options = type === 'text' ? { text: selectedElement.value.text } : {};
+    updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, options);
   } else if (action.value === 'resizing') {
     if (!selectedElement.value || !selectedElement.value.position) return;
 
@@ -317,7 +380,18 @@ function handleMousemove(e) {
 }
 
 function handleMouseup(e) {
+  const { clientX, clientY } = getMouseCoordinates(e);
+
   if (selectedElement.value) {
+    if (
+      selectedElement.value.type === 'text' &&
+      clientX - selectedElement.value.offsetX === selectedElement.x1 &&
+      clientY - selectedElement.value.offsetY === selectedElement.y1
+    ) {
+      action.value = 'writing';
+      return;
+    }
+
     const index = selectedElement.value.id;
     const currentElements = elements.value;
     if (!currentElements || !Array.isArray(currentElements) || !currentElements[index]) {
@@ -343,6 +417,21 @@ function handleMouseup(e) {
   action.value = 'none';
   selectedElement.value = null;
 }
+
+function handleBlur(e) {
+  if (!selectedElement.value) return;
+
+  const { id, x1, y1, type } = selectedElement.value;
+  const text = e.target.value;
+
+  const textWidth = ctx.measureText(text).width;
+  const textHeight = 16;
+
+  updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, { text });
+  action.value = 'none';
+  selectedElement.value = null;
+}
+
 </script>
 
 <template>
@@ -362,6 +451,21 @@ function handleMouseup(e) {
     </div>
 
     <canvas id="canvas" ref="canvas"></canvas>
+    <textarea v-if="action === 'writing'" ref="textarea" v-model="selectedElement.text" @blur="handleBlur" :style="{
+      position: 'absolute',
+      top: selectedElement.y1 - 2 + panOffset.y,
+      left: selectedElement.x1 + panOffset.x,
+      background: 'transparent',
+      zIndex: 100,
+      fontFamily: 'Arial, sans-serif',
+      width: '200px',
+      height: '60px',
+      fontSize: '16px',
+      whiteSpace: 'pre',
+      overflow: 'hidden',
+      resize: 'auto',
+      color: 'black',
+    }"></textarea>
   </div>
 </template>
 

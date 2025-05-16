@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useHistory } from './hooks/useHistory';
 import { Drawer, Generator } from './Drawer';
-import { adjustElementCoordinates, adjustmentRequired } from './utils/coordinates';
+import { adjustElementCoordinates, adjustmentRequired, cursorForPosition, getElementAtPosition, resizedCoordinates } from './utils/coordinates';
 
 const canvas = ref(null);
 const textarea = ref(null);
@@ -15,6 +15,13 @@ const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text'];
  * @type {Generator}
  */
 const generator = new Generator();
+
+const numberOfShapes = {
+  line: 0,
+  rectangle: 0,
+  ellipse: 0,
+  text: 0,
+};
 
 const { state: elements, setState: setElements, undo, redo } = useHistory([]);
 const action = ref('none');
@@ -112,7 +119,7 @@ function drawElement(drawer, element) {
   }
 }
 
-function createElement(id, x1, y1, x2, y2, type) {
+function createElement(id, x1, y1, x2, y2, type, shapeNumber) {
   switch (type) {
     case 'line':
       const lineShape = generator.line(x1, y1, x2, y2);
@@ -123,6 +130,8 @@ function createElement(id, x1, y1, x2, y2, type) {
         y1,
         x2,
         y2,
+        title: `Line ${shapeNumber}`,
+        shapeNumber,
         canvasShape: lineShape,
       };
     case 'rectangle':
@@ -139,6 +148,8 @@ function createElement(id, x1, y1, x2, y2, type) {
         y1,
         x2,
         y2,
+        title: `Rectangle ${shapeNumber}`,
+        shapeNumber,
         canvasShape: rectShape,
       };
     case 'ellipse':
@@ -150,6 +161,8 @@ function createElement(id, x1, y1, x2, y2, type) {
         y1,
         x2,
         y2,
+        title: `Ellipse ${shapeNumber}`,
+        shapeNumber,
         canvasShape: ellipesShape,
       };
     case 'text':
@@ -160,6 +173,8 @@ function createElement(id, x1, y1, x2, y2, type) {
         y1,
         x2,
         y2,
+        title: `Text ${shapeNumber}`,
+        shapeNumber,
         text: "",
       };
     default:
@@ -168,7 +183,7 @@ function createElement(id, x1, y1, x2, y2, type) {
   }
 }
 
-function updateElement(id, x1, y1, x2, y2, type, options = {}) {
+function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
   const currentElements = elements.value;
   if (!currentElements || !Array.isArray(currentElements)) return;
 
@@ -178,7 +193,7 @@ function updateElement(id, x1, y1, x2, y2, type, options = {}) {
     case 'line':
     case 'rectangle':
     case 'ellipse':
-      elementsCopy[id] = createElement(id, x1, y1, x2, y2, type);
+      elementsCopy[id] = createElement(id, x1, y1, x2, y2, type, shapeNumber);
       break;
     case 'text':
       const text = options.text || "";
@@ -186,7 +201,7 @@ function updateElement(id, x1, y1, x2, y2, type, options = {}) {
       const textHeight = 16;
 
       elementsCopy[id] = {
-        ...createElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type),
+        ...createElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, shapeNumber),
         text,
       };
       break;
@@ -196,112 +211,17 @@ function updateElement(id, x1, y1, x2, y2, type, options = {}) {
 
   setElements(elementsCopy, true);
 }
+
 function getMouseCoordinates(e) {
   const clientX = e.clientX - panOffset.value.x;
   const clientY = e.clientY - panOffset.value.y;
   return { clientX, clientY };
 }
 
-const nearPoint = (x, y, x1, y1, name) => {
-  return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
-};
-
-const distance = (a, b) => Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-
-function onLine(x1, y1, x2, y2, x, y, maxDistance = 1) {
-  const a = { x: x1, y: y1 };
-  const b = { x: x2, y: y2 };
-  const c = { x, y };
-  const offset = distance(a, b) - (distance(a, c) + distance(b, c));
-  return Math.abs(offset) < maxDistance ? 'inside' : null;
-}
-
-function positionWithinElement(x, y, element) {
-  const { type, x1, y1, x2, y2 } = element;
-
-  switch (type) {
-    case 'line':
-      const on = onLine(x1, y1, x2, y2, x, y);
-      const start = nearPoint(x, y, x1, y1, 'start');
-      const end = nearPoint(x, y, x2, y2, 'end');
-      return start || end || on;
-    case 'rectangle':
-      const topleft = nearPoint(x, y, x1, y1, 'tl');
-      const topright = nearPoint(x, y, x2, y1, 'tr');
-      const bottomleft = nearPoint(x, y, x1, y2, 'bl');
-      const bottomright = nearPoint(x, y, x2, y2, 'br');
-      const inside = (x >= x1 && x <= x2 && y >= y1 && y <= y2) ? 'inside' : null;
-      return topleft || topright || bottomleft || bottomright || inside;
-    case 'ellipse':
-      const centerX = (x1 + x2) / 2;
-      const centerY = (y1 + y2) / 2;
-      const radiusX = Math.abs(x2 - x1) / 2;
-      const radiusY = Math.abs(y2 - y1) / 2;
-      const ellipseInside = ((x - centerX) ** 2) / (radiusX ** 2) + ((y - centerY) ** 2) / (radiusY ** 2) <= 1;
-      return ellipseInside ? 'inside' : null;
-    case 'text':
-      const textWidth = ctx.measureText(element.text).width;
-      const textHeight = 16;
-      const textInside = (x >= x1 && x <= x1 + textWidth && y >= y1 && y <= y1 + textHeight) ? 'inside' : null;
-      return textInside;
-    default:
-      console.error('error in positionWithinElement');
-      return null;
-  }
-}
-
-function getElementAtPosition(x, y, elements) {
-  if (!elements || !Array.isArray(elements)) return null;
-
-  for (let i = elements.length - 1; i >= 0; i--) {
-    const element = elements[i];
-    const position = positionWithinElement(x, y, element);
-    if (position) {
-      return { ...element, position };
-    }
-  }
-  return null;
-}
-
-const cursorForPosition = position => {
-  switch (position) {
-    case "tl":
-    case "br":
-    case "start":
-    case "end":
-      return "nwse-resize";
-    case "tr":
-    case "bl":
-      return "nesw-resize";
-    case "inside":
-      return "move";
-    default:
-      return "default";
-  }
-};
-
-function resizedCoordinates(clientX, clientY, position, coordinates) {
-  const { x1, y1, x2, y2 } = coordinates;
-  switch (position) {
-    case 'tl':
-    case 'start':
-      return { x1: clientX, y1: clientY, x2, y2 };
-    case 'tr':
-      return { x1, y1: clientY, x2: clientX, y2 };
-    case 'bl':
-      return { x1: clientX, y1, x2, y2: clientY };
-    case 'br':
-    case 'end':
-      return { x1, y1, x2: clientX, y2: clientY };
-    default:
-      return { x1, y1, x2, y2 };
-  }
-}
-
 function handleDblClick(e) {
   if (tool.value !== 'selection') return;
   const { clientX, clientY } = getMouseCoordinates(e);
-  const element = getElementAtPosition(clientX, clientY, elements.value);
+  const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
   if (element && element.type === 'text' && element.position === 'inside') {
     selectedElement.value = { ...element, offsetX: clientX - element.x1, offsetY: clientY - element.y1 };
     action.value = 'writing';
@@ -320,7 +240,7 @@ function handleMousedown(e) {
   const { clientX, clientY } = getMouseCoordinates(e);
 
   if (tool.value === 'selection') {
-    const element = getElementAtPosition(clientX, clientY, elements.value);
+    const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
     if (element) {
       const offsetX = clientX - element.x1;
       const offsetY = clientY - element.y1;
@@ -342,7 +262,8 @@ function handleMousedown(e) {
   } else {
     const currentElements = elements.value || [];
     const id = currentElements.length;
-    const element = createElement(id, clientX, clientY, clientX, clientY, tool.value);
+    const shapeNumber = ++numberOfShapes[tool.value];
+    const element = createElement(id, clientX, clientY, clientX, clientY, tool.value, shapeNumber);
 
     setElements([...currentElements, element]);
     selectedElement.value = element;
@@ -382,24 +303,24 @@ function handleMousemove(e) {
     if (!currentElements || !Array.isArray(currentElements) || currentElements.length === 0) return;
 
     const index = currentElements.length - 1;
-    const { x1, y1 } = currentElements[index];
-    updateElement(index, x1, y1, clientX, clientY, tool.value);
+    const { x1, y1, shapeNumber } = currentElements[index];
+    updateElement(index, x1, y1, clientX, clientY, tool.value, shapeNumber);
   } else if (action.value === 'moving') {
     if (!selectedElement.value) return;
 
-    const { id, x1, x2, y1, y2, type, offsetX, offsetY } = selectedElement.value;
+    const { id, x1, x2, y1, y2, type, offsetX, offsetY, shapeNumber } = selectedElement.value;
     const width = x2 - x1;
     const height = y2 - y1;
     const newX1 = clientX - offsetX;
     const newY1 = clientY - offsetY;
     const options = type === 'text' ? { text: selectedElement.value.text } : {};
-    updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, options);
+    updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, shapeNumber, options);
   } else if (action.value === 'resizing') {
     if (!selectedElement.value || !selectedElement.value.position) return;
 
-    const { id, type, position, x1, y1, x2, y2 } = selectedElement.value;
+    const { id, type, position, x1, y1, x2, y2, shapeNumber } = selectedElement.value;
     const coords = resizedCoordinates(clientX, clientY, position, { x1, y1, x2, y2 });
-    updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type);
+    updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
   } else if (action.value === 'none') {
     const element = getElementAtPosition(clientX, clientY, elements.value);
     if (canvas.value) {
@@ -431,8 +352,8 @@ function handleMouseup(e) {
 
     const { id, type } = currentElements[index];
     if ((action.value === 'drawing' || action.value === 'resizing') && adjustmentRequired(type)) {
-      const { x1, y1, x2, y2 } = adjustElementCoordinates(currentElements[index]);
-      updateElement(id, x1, y1, x2, y2, type);
+      const { x1, y1, x2, y2, shapeNumber } = adjustElementCoordinates(currentElements[index]);
+      updateElement(id, x1, y1, x2, y2, type, shapeNumber);
     }
   }
 
@@ -481,6 +402,17 @@ function handleBlur(e) {
       </div>
     </div>
 
+    <aside id="sidebar-left">
+      <h5>Elements</h5>
+      <div v-for="(element, index) in elements" :key="index">
+        <p>{{ element.title }}</p>
+      </div>
+    </aside>
+
+    <aside id="sidebar-right">
+      sidebar right
+    </aside>
+
     <canvas id="canvas" ref="canvas"></canvas>
     <textarea v-if="action === 'writing'" ref="textarea" :value="selectedElement?.text || ''"
       @input="e => { if (selectedElement) selectedElement.text = e.target.value }" @blur="handleBlur" :style="{
@@ -503,6 +435,28 @@ function handleBlur(e) {
   height: 100vh;
   position: relative;
   font-family: Arial, sans-serif;
+}
+
+#sidebar-left {
+  width: 240px;
+  padding: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  bottom: 0px;
+  z-index: 250px;
+}
+
+#sidebar-right {
+  width: 240px;
+  padding: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  bottom: 0px;
+  z-index: 250px;
 }
 
 #canvas {

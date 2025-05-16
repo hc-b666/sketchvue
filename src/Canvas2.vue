@@ -32,6 +32,8 @@ onMounted(() => {
   canvas.value.addEventListener('mousemove', handleMousemove);
   canvas.value.addEventListener('mouseup', handleMouseup);
 
+  canvas.value.addEventListener('dblclick', handleDblClick);
+
   document.addEventListener('keydown', undoredo);
 });
 
@@ -42,6 +44,8 @@ onUnmounted(() => {
     canvas.value.removeEventListener('mousedown', handleMousedown);
     canvas.value.removeEventListener('mousemove', handleMousemove);
     canvas.value.removeEventListener('mouseup', handleMouseup);
+
+    canvas.value.removeEventListener('dblclick', handleDblClick);
   }
 });
 
@@ -77,7 +81,6 @@ function renderCanvas() {
 
 function autoFocusTextarea() {
   if (textarea.value && action.value === 'writing') {
-    console.log('autofocus worked');
     setTimeout(() => {
       textarea.value.focus();
       textarea.value = selectedElement.value.text;
@@ -236,6 +239,11 @@ function positionWithinElement(x, y, element) {
       const radiusY = Math.abs(y2 - y1) / 2;
       const ellipseInside = ((x - centerX) ** 2) / (radiusX ** 2) + ((y - centerY) ** 2) / (radiusY ** 2) <= 1;
       return ellipseInside ? 'inside' : null;
+    case 'text':
+      const textWidth = ctx.measureText(element.text).width;
+      const textHeight = 16;
+      const textInside = (x >= x1 && x <= x1 + textWidth && y >= y1 && y <= y1 + textHeight) ? 'inside' : null;
+      return textInside;
     default:
       console.error('error in positionWithinElement');
       return null;
@@ -290,6 +298,22 @@ function resizedCoordinates(clientX, clientY, position, coordinates) {
   }
 }
 
+function handleDblClick(e) {
+  if (tool.value !== 'selection') return;
+  const { clientX, clientY } = getMouseCoordinates(e);
+  const element = getElementAtPosition(clientX, clientY, elements.value);
+  if (element && element.type === 'text' && element.position === 'inside') {
+    selectedElement.value = { ...element, offsetX: clientX - element.x1, offsetY: clientY - element.y1 };
+    action.value = 'writing';
+    setTimeout(() => {
+      if (textarea.value) {
+        textarea.value.focus();
+        textarea.value.value = element.text;
+      }
+    }, 0);
+  }
+}
+
 function handleMousedown(e) {
   if (action.value === 'writing') return;
 
@@ -323,16 +347,21 @@ function handleMousedown(e) {
     setElements([...currentElements, element]);
     selectedElement.value = element;
 
-    console.log(tool.value, selectedElement.value, elements.value)
-
     action.value = tool.value === 'text' ? 'writing' : 'drawing';
+
+    if (tool.value === 'text') {
+      setTimeout(() => {
+        if (textarea.value) {
+          textarea.value.focus();
+          textarea.value.value = '';
+        }
+      }, 0);
+    }
   }
 }
 
 function handleMousemove(e) {
   const { clientX, clientY } = getMouseCoordinates(e);
-
-  console.log(action.value)
 
   if (action.value === 'panning') {
     const deltaX = e.clientX - startPanMousePos.value.x;
@@ -385,8 +414,8 @@ function handleMouseup(e) {
   if (selectedElement.value) {
     if (
       selectedElement.value.type === 'text' &&
-      clientX - selectedElement.value.offsetX === selectedElement.x1 &&
-      clientY - selectedElement.value.offsetY === selectedElement.y1
+      clientX - selectedElement.value.offsetX === selectedElement.value.x1 &&
+      clientY - selectedElement.value.offsetY === selectedElement.value.y1
     ) {
       action.value = 'writing';
       return;
@@ -424,14 +453,16 @@ function handleBlur(e) {
   const { id, x1, y1, type } = selectedElement.value;
   const text = e.target.value;
 
-  const textWidth = ctx.measureText(text).width;
-  const textHeight = 16;
+  if (text && text.trim() !== '') {
+    const textWidth = ctx.measureText(text).width || 100;
+    const textHeight = 16;
 
-  updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, { text });
+    updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, { text });
+  }
+
   action.value = 'none';
   selectedElement.value = null;
 }
-
 </script>
 
 <template>
@@ -451,21 +482,18 @@ function handleBlur(e) {
     </div>
 
     <canvas id="canvas" ref="canvas"></canvas>
-    <textarea v-if="action === 'writing'" ref="textarea" v-model="selectedElement.text" @blur="handleBlur" :style="{
-      position: 'absolute',
-      top: selectedElement.y1 - 2 + panOffset.y,
-      left: selectedElement.x1 + panOffset.x,
-      background: 'transparent',
-      zIndex: 100,
-      fontFamily: 'Arial, sans-serif',
-      width: '200px',
-      height: '60px',
-      fontSize: '16px',
-      whiteSpace: 'pre',
-      overflow: 'hidden',
-      resize: 'auto',
-      color: 'black',
-    }"></textarea>
+    <textarea v-if="action === 'writing'" ref="textarea" :value="selectedElement?.text || ''"
+      @input="e => { if (selectedElement) selectedElement.text = e.target.value }" @blur="handleBlur" :style="{
+        position: 'absolute',
+        top: `${selectedElement?.y1 - 2 + panOffset.y}px`,
+        left: `${selectedElement?.x1 + panOffset.x}px`,
+        zIndex: 100,
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        whiteSpace: 'pre',
+        overflow: 'hidden',
+        color: 'black',
+      }"></textarea>
   </div>
 </template>
 

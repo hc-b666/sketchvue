@@ -1,6 +1,6 @@
 export function adjustElementCoordinates(element) {
   const { type, x1, y1, x2, y2, shapeNumber } = element;
-  if (type === "rectangle") {
+  if (type === "rectangle" || type === "frame") {
     const minX = Math.min(x1, x2);
     const maxX = Math.max(x1, x2);
     const minY = Math.min(y1, y2);
@@ -22,7 +22,7 @@ export function adjustElementCoordinates(element) {
 }
 
 export const adjustmentRequired = (type) =>
-  ["line", "rectangle"].includes(type);
+  ["line", "rectangle", "frame"].includes(type);
 
 export const nearPoint = (x, y, x1, y1, name) => {
   return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
@@ -49,6 +49,7 @@ export function positionWithinElement(ctx, x, y, element) {
       const end = nearPoint(x, y, x2, y2, "end");
       return start || end || on;
     case "rectangle":
+    case "frame":
       const topleft = nearPoint(x, y, x1, y1, "tl");
       const topright = nearPoint(x, y, x2, y1, "tr");
       const bottomleft = nearPoint(x, y, x1, y2, "bl");
@@ -130,7 +131,7 @@ export function getShiftedCoordinates(x1, y1, clientX, clientY, type) {
   let newX2 = clientX;
   let newY2 = clientY;
 
-  if (type === "rectangle" || type === "ellipse") {
+  if (type === "rectangle" || type === "ellipse" || type === "frame") {
     const dx = clientX - x1;
     const dy = clientY - y1;
     const size = Math.max(Math.abs(dx), Math.abs(dy));

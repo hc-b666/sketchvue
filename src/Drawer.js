@@ -18,6 +18,24 @@ export class Generator {
     };
   }
 
+  frame(x, y, width, height, options = {}) {
+    const shapeOptions = { ...options };
+
+    return {
+      type: "frame",
+      x,
+      y,
+      width,
+      height,
+      options: {
+        ...shapeOptions,
+        strokeStyle: shapeOptions.strokeStyle || "red",
+        lineWidth: shapeOptions.lineWidth || 2,
+        fillStyle: shapeOptions.fillRect || "white",
+      },
+    };
+  }
+
   line(x1, y1, x2, y2, options = {}) {
     const shapeOptions = { ...options };
 
@@ -75,7 +93,7 @@ export class Drawer {
     this.ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
   }
 
-  draw(shape) {
+  draw(shape, options = {}) {
     const { type } = shape;
     switch (type) {
       case "rectangle":
@@ -86,6 +104,9 @@ export class Drawer {
         break;
       case "ellipse":
         this._drawEllipse(shape);
+        break;
+      case "frame":
+        this._drawFrame(shape, options.title);
         break;
       default:
         throw new Error(`Unknown shape type: ${type}`);
@@ -127,6 +148,24 @@ export class Drawer {
     this.ctx.fillStyle = "#000";
     this.ctx.strokeStyle = options.strokeStyle || "black";
     this.ctx.lineWidth = options.lineWidth || 1;
+
+    this.ctx.stroke();
+  }
+
+  _drawFrame(shape, title) {
+    const { x, y, width, height, options } = shape;
+    this.ctx.beginPath();
+
+    this.ctx.fillStyle = options.fillStyle || "white";
+    this.ctx.strokeStyle = options.strokeStyle || "black";
+    this.ctx.lineWidth = options.lineWidth || 1;
+
+    this.ctx.fillRect(x, y, width, height);
+    this.ctx.strokeRect(x, y, width, height);
+
+    this.ctx.fillStyle = "#000";
+    this.ctx.font = "12px Arial";
+    this.ctx.fillText(title, x + 5, y - 5);
 
     this.ctx.stroke();
   }

@@ -17,7 +17,7 @@ const textarea = ref(null);
  * @type {CanvasRenderingContext2D}
  */
 let ctx = null;
-const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text'];
+const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text', 'frame'];
 /**
  * @type {Generator}
  */
@@ -28,6 +28,7 @@ const numberOfShapes = {
   rectangle: 0,
   ellipse: 0,
   text: 0,
+  frame: 0,
 };
 
 const { state: elements, setState: setElements, undo, redo } = useHistory([]);
@@ -88,7 +89,10 @@ function renderCanvas() {
 
   const currentElements = elements.value;
   if (currentElements && Array.isArray(currentElements)) {
-    currentElements.forEach((element) => {
+    currentElements.filter((el) => el.type === 'frame').forEach((el) => {
+      drawElement(drawer, el);
+    });
+    currentElements.filter((el) => el.type !== 'frame').forEach((element) => {
       if (action.value === 'writing' && selectedElement.value.id === element.id) return;
       drawElement(drawer, element);
     });
@@ -126,6 +130,9 @@ function drawElement(drawer, element) {
     case 'ellipse':
       drawer.draw(element.canvasShape);
       break;
+    case 'frame':
+      drawer.draw(element.canvasShape, { title: element.title });
+      break;
     case 'text':
       ctx.textBaseline = 'top';
       ctx.font = '16px Arial';
@@ -138,6 +145,25 @@ function drawElement(drawer, element) {
 
 function createElement(id, x1, y1, x2, y2, type, shapeNumber) {
   switch (type) {
+    case 'frame':
+      const frameShape = generator.frame(
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.abs(x2 - x1),
+        Math.abs(y2 - y1),
+      );
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Frame ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: frameShape,
+        children: [],
+      };
     case 'line':
       const lineShape = generator.line(x1, y1, x2, y2);
       return {
@@ -210,6 +236,7 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
     case 'line':
     case 'rectangle':
     case 'ellipse':
+    case 'frame':
       elementsCopy[id] = createElement(id, x1, y1, x2, y2, type, shapeNumber);
       break;
     case 'text':
@@ -322,7 +349,7 @@ function handleMousemove(e) {
     const index = currentElements.length - 1;
     const { x1, y1, shapeNumber, type } = currentElements[index];
 
-    if (shiftPressed.value && (type === 'rectangle' || type === 'line' || type === 'ellipse')) {
+    if (shiftPressed.value && (type === 'rectangle' || type === 'line' || type === 'ellipse' || type === 'frame')) {
       const { newX2, newY2 } = getShiftedCoordinates(x1, y1, clientX, clientY, type);
       updateElement(index, x1, y1, newX2, newY2, type, shapeNumber);
     } else {

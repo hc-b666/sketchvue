@@ -14,6 +14,7 @@ export class Generator {
         ...shapeOptions,
         strokeStyle: shapeOptions.strokeStyle || "black",
         lineWidth: shapeOptions.lineWidth || 2,
+        fillStyle: shapeOptions.fillStyle || "red",
       },
     };
   }
@@ -117,7 +118,7 @@ export class Drawer {
     const { x, y, width, height, options } = shape;
     this.ctx.beginPath();
 
-    this.ctx.fillStyle = "#000";
+    this.ctx.fillStyle = options.fillStyle || "white";
     this.ctx.strokeStyle = options.strokeStyle || "black";
     this.ctx.lineWidth = options.lineWidth || 1;
 

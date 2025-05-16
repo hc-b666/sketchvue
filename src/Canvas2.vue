@@ -14,7 +14,7 @@ import {
 } from './utils/coordinates';
 
 String.prototype.toCapitalize = function () {
-  return this.charAt(0).toUpperCase() + this.slice(1);
+  return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
 }
 
 const canvas = ref(null);
@@ -76,7 +76,26 @@ onUnmounted(() => {
 
 watch([elements, action, selectedElement, panOffset, shiftPressed], renderCanvas, { deep: true });
 watch([action, selectedElement], autoFocusTextarea, { deep: true });
-
+watch(
+  () => selectedElement2.value?.canvasShape?.options?.fillStyle,
+  (newFillStyle) => {
+    if (
+      selectedElement2.value &&
+      typeof selectedElement2.value.id === 'number' &&
+      selectedElement2.value.canvasShape &&
+      newFillStyle !== undefined
+    ) {
+      const idx = selectedElement2.value.id;
+      const currentElements = elements.value;
+      if (currentElements && currentElements[idx]) {
+        const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
+        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { fillStyle: newFillStyle });
+      }
+    }
+  }, {
+  deep: true,
+}
+);
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
   else if ((e.metaKey || e.ctrlKey) && e.key === 'y') redo();
@@ -256,12 +275,21 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
 
   const elementsCopy = [...currentElements];
 
+  const existingElement = elementsCopy[id];
+  const existingFillStyle = existingElement?.canvasShape?.options?.fillStyle;
+
   switch (type) {
     case 'line':
     case 'rectangle':
     case 'ellipse':
     case 'frame':
-      elementsCopy[id] = createElement(id, x1, y1, x2, y2, type, shapeNumber);
+      const newElement = createElement(id, x1, y1, x2, y2, type, shapeNumber);
+      if (existingFillStyle && !options.fillStyle) {
+        newElement.canvasShape.options.fillStyle = existingFillStyle;
+      } else if (options.fillStyle) {
+        newElement.canvasShape.options.fillStyle = options.fillStyle;
+      }
+      elementsCopy[id] = newElement;
       break;
     case 'text':
       const text = options.text || "";
@@ -424,7 +452,7 @@ function handleMousemove(e) {
         y: newY1,
         width,
         height,
-      }
+      },
     };
   } else if (action.value === 'resizing') {
     if (!selectedElement.value || !selectedElement.value.position) return;
@@ -608,6 +636,11 @@ function setSelectedElement(el) {
           <div class="sidebar-right-content_layout_items">
             <p>Width: {{ selectedElement2.canvasShape.width }}</p>
             <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+          </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="fillStyle">Fill Style</label>
+            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
+              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
           </div>
         </div>
       </div>

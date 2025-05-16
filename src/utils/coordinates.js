@@ -125,3 +125,26 @@ export function resizedCoordinates(clientX, clientY, position, coordinates) {
       return { x1, y1, x2, y2 };
   }
 }
+
+export function getShiftedCoordinates(x1, y1, clientX, clientY, type) {
+  let newX2 = clientX;
+  let newY2 = clientY;
+
+  if (type === "rectangle" || type === "ellipse") {
+    const dx = clientX - x1;
+    const dy = clientY - y1;
+    const size = Math.max(Math.abs(dx), Math.abs(dy));
+    newX2 = x1 + size * Math.sign(dx);
+    newY2 = y1 + size * Math.sign(dy);
+  } else if (type === "line") {
+    const dx = clientX - x1;
+    const dy = clientY - y1;
+    const angle = Math.atan2(dy, dx);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+    newX2 = x1 + distance * Math.cos(snapAngle);
+    newY2 = y1 + distance * Math.sin(snapAngle);
+  }
+
+  return { newX2, newY2 };
+}

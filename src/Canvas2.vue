@@ -2,7 +2,14 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useHistory } from './hooks/useHistory';
 import { Drawer, Generator } from './Drawer';
-import { adjustElementCoordinates, adjustmentRequired, cursorForPosition, getElementAtPosition, resizedCoordinates } from './utils/coordinates';
+import {
+  adjustElementCoordinates,
+  adjustmentRequired,
+  cursorForPosition,
+  getElementAtPosition,
+  getShiftedCoordinates,
+  resizedCoordinates,
+} from './utils/coordinates';
 
 const canvas = ref(null);
 const textarea = ref(null);
@@ -29,6 +36,7 @@ const tool = ref('rectangle');
 const selectedElement = ref(null);
 const panOffset = ref({ x: 0, y: 0 });
 const startPanMousePos = ref({ x: 0, y: 0 });
+const shiftPressed = ref(false);
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
@@ -42,10 +50,12 @@ onMounted(() => {
   canvas.value.addEventListener('dblclick', handleDblClick);
 
   document.addEventListener('keydown', undoredo);
+  document.addEventListener('keyup', handleShiftKeyup);
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', undoredo);
+  document.removeEventListener('keyup', handleShiftKeyup);
 
   if (canvas.value) {
     canvas.value.removeEventListener('mousedown', handleMousedown);
@@ -56,12 +66,13 @@ onUnmounted(() => {
   }
 });
 
-watch([elements, action, selectedElement, panOffset], renderCanvas, { deep: true });
+watch([elements, action, selectedElement, panOffset, shiftPressed], renderCanvas, { deep: true });
 watch([action, selectedElement], autoFocusTextarea, { deep: true });
 
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
   else if ((e.metaKey || e.ctrlKey) && e.key === 'y') redo();
+  else if (e.key === 'Shift') shiftPressed.value = true;
 };
 
 function renderCanvas() {
@@ -92,6 +103,12 @@ function autoFocusTextarea() {
       textarea.value.focus();
       textarea.value = selectedElement.value.text;
     }, 0);
+  }
+}
+
+function handleShiftKeyup(e) {
+  if (e.key === 'Shift') {
+    shiftPressed.value = false;
   }
 }
 
@@ -303,8 +320,14 @@ function handleMousemove(e) {
     if (!currentElements || !Array.isArray(currentElements) || currentElements.length === 0) return;
 
     const index = currentElements.length - 1;
-    const { x1, y1, shapeNumber } = currentElements[index];
-    updateElement(index, x1, y1, clientX, clientY, tool.value, shapeNumber);
+    const { x1, y1, shapeNumber, type } = currentElements[index];
+
+    if (shiftPressed.value && (type === 'rectangle' || type === 'line' || type === 'ellipse')) {
+      const { newX2, newY2 } = getShiftedCoordinates(x1, y1, clientX, clientY, type);
+      updateElement(index, x1, y1, newX2, newY2, type, shapeNumber);
+    } else {
+      updateElement(index, x1, y1, clientX, clientY, tool.value, shapeNumber);
+    }
   } else if (action.value === 'moving') {
     if (!selectedElement.value) return;
 
@@ -322,7 +345,7 @@ function handleMousemove(e) {
     const coords = resizedCoordinates(clientX, clientY, position, { x1, y1, x2, y2 });
     updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
   } else if (action.value === 'none') {
-    const element = getElementAtPosition(clientX, clientY, elements.value);
+    const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
     if (canvas.value) {
       canvas.value.style.cursor = element ? cursorForPosition(element.position) : 'default';
     }
@@ -371,14 +394,14 @@ function handleMouseup(e) {
 function handleBlur(e) {
   if (!selectedElement.value) return;
 
-  const { id, x1, y1, type } = selectedElement.value;
+  const { id, x1, y1, type, shapeNumber } = selectedElement.value;
   const text = e.target.value;
 
   if (text && text.trim() !== '') {
     const textWidth = ctx.measureText(text).width || 100;
     const textHeight = 16;
 
-    updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, { text });
+    updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, shapeNumber, { text });
   }
 
   action.value = 'none';

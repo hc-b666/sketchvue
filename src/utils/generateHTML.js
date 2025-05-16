@@ -32,3 +32,39 @@ export function generateHTML(componentTree) {
 
   return html;
 }
+
+export function generateHTML2(elements) {
+  // console.log(elements)
+  const frames = elements.value.filter((el) => el.type === "frame");
+  const otherElements = elements.value.filter((el) => el.type !== "frame");
+
+  const insideFrameIds = new Set();
+  frames.forEach((frame) => {
+    frame.children = otherElements.filter((child) =>
+      isElementInsideFrame(child, frame)
+    );
+    frame.children.forEach((child) => insideFrameIds.add(child.id));
+  });
+
+  const layers = elements.value.filter(
+    (el) => el.type === "frame" || !insideFrameIds.has(el.id)
+  );
+
+  let html = "";
+
+  layers.forEach((layer) => {
+    html += `<div ${layer.className ? `class=${layer.className}` : ""}>`;
+
+    if (layer.type === "frame" && layer.children.length > 0) {
+      layer.children.forEach((child) => {
+        html += `<div ${
+          child.className ? `class=${child.className}` : ""
+        }></div>`;
+      });
+    }
+
+    html += `</div>`;
+  });
+
+  return html;
+}

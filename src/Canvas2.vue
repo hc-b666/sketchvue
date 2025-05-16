@@ -12,6 +12,7 @@ import {
   positionWithinElement,
   resizedCoordinates,
 } from './utils/coordinates';
+import { generateHTML2 } from './utils/generateHTML';
 
 String.prototype.toCapitalize = function () {
   return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
@@ -570,11 +571,15 @@ function setSelectedElement(el) {
     <aside id="sidebar-left">
       <h5>Elements</h5>
       <div v-for="el in layers" :key="el.id">
-        <button @click="setSelectedElement(el)">{{ el.title }}</button>
+        <button @click="setSelectedElement(el)">
+          {{ el.title }}
+        </button>
         <div v-if="el.type === 'frame' && el.children.length > 0">
           <ul style="padding-left: 8px;">
             <li v-for="child in el.children" :key="child.id">
-              <button @click="setSelectedElement(child)">{{ child.title }}</button>
+              <button @click="setSelectedElement(child)">
+                {{ child.title }}
+              </button>
             </li>
           </ul>
         </div>
@@ -584,7 +589,9 @@ function setSelectedElement(el) {
     <aside class="sidebar-right">
       <!-- line -->
       <div v-if="selectedElement2 && selectedElement2.type === 'line'" class="sidebar-right-content">
-        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <span>
+          {{ selectedElement2.type.toCapitalize() }}
+        </span>
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
@@ -602,8 +609,10 @@ function setSelectedElement(el) {
       </div>
 
       <!-- text -->
-      <div v-if="selectedElement2 && selectedElement2.type === 'text'" class="sidebar-right-content">
-        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+      <div v-else-if="selectedElement2 && selectedElement2.type === 'text'" class="sidebar-right-content">
+        <span>
+          {{ selectedElement2.type.toCapitalize() }}
+        </span>
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
@@ -621,7 +630,7 @@ function setSelectedElement(el) {
       </div>
 
       <!-- rectangle, ellipse -->
-      <div v-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
+      <div v-else-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
         class="sidebar-right-content">
         <span>{{ selectedElement2.type.toCapitalize() }}</span>
         <div class="sidebar-right-content_position">
@@ -643,6 +652,31 @@ function setSelectedElement(el) {
               @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
           </div>
         </div>
+      </div>
+
+      <!-- canvas -->
+      <div v-else class="sidebar-right-content">
+        <!-- <span>Canvas</span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.canvasShape.x }}</p>
+            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
+          </div>
+        </div> -->
+        <!-- <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
+            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+          </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="fillStyle">Fill Style</label>
+            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
+              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
+          </div>
+        </div> -->
+
       </div>
 
     </aside>

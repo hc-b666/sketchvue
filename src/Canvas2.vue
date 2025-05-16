@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useHistory } from './hooks/useHistory';
 import { Drawer, Generator } from './Drawer';
 import {
@@ -8,8 +8,14 @@ import {
   cursorForPosition,
   getElementAtPosition,
   getShiftedCoordinates,
+  isElementInsideFrame,
+  positionWithinElement,
   resizedCoordinates,
 } from './utils/coordinates';
+
+String.prototype.toCapitalize = function () {
+  return this.charAt(0).toUpperCase() + this.slice(1);
+}
 
 const canvas = ref(null);
 const textarea = ref(null);
@@ -35,6 +41,7 @@ const { state: elements, setState: setElements, undo, redo } = useHistory([]);
 const action = ref('none');
 const tool = ref('rectangle');
 const selectedElement = ref(null);
+const selectedElement2 = ref(null);
 const panOffset = ref({ x: 0, y: 0 });
 const startPanMousePos = ref({ x: 0, y: 0 });
 const shiftPressed = ref(false);
@@ -115,6 +122,23 @@ function handleShiftKeyup(e) {
     shiftPressed.value = false;
   }
 }
+
+const layers = computed(() => {
+  const frames = elements.value.filter((el) => el.type === 'frame');
+  const otherElements = elements.value.filter((el) => el.type !== 'frame');
+
+  const insideFrameIds = new Set();
+  frames.forEach(frame => {
+    frame.children = otherElements.filter(child => isElementInsideFrame(child, frame));
+    frame.children.forEach(child => insideFrameIds.add(child.id));
+  });
+
+  const lays = elements.value.filter(el =>
+    el.type === 'frame' || !insideFrameIds.has(el.id)
+  );
+
+  return lays;
+});
 
 /**
  * 
@@ -283,6 +307,26 @@ function handleMousedown(e) {
 
   const { clientX, clientY } = getMouseCoordinates(e);
 
+  if (selectedElement.value && selectedElement.value.type === 'frame') {
+    const position = positionWithinElement(ctx, clientX, clientY, selectedElement.value);
+
+    if (position && position !== 'inside') {
+      action.value = 'resizing';
+      selectedElement.value = { ...selectedElement.value, position, offsetX: clientX - selectedElement.value.x1, offsetY: clientY - selectedElement.value.y1 };
+      selectedElement2.value = { ...selectedElement.value };
+    } else if (position === 'inside') {
+      action.value = 'moving';
+      selectedElement.value = { ...selectedElement.value, position, offsetX: clientX - selectedElement.value.x1, offsetY: clientY - selectedElement.value.y1 };
+      selectedElement2.value = { ...selectedElement.value };
+    }
+
+    if (canvas.value) {
+      canvas.value.style.cursor = cursorForPosition(selectedElement.value.position);
+    }
+
+    return;
+  }
+
   if (tool.value === 'selection') {
     const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
     if (element) {
@@ -290,6 +334,7 @@ function handleMousedown(e) {
       const offsetY = clientY - element.y1;
 
       selectedElement.value = { ...element, offsetX, offsetY };
+      selectedElement2.value = { ...element, offsetX, offsetY };
 
       if (element.position === 'inside') action.value = 'moving';
       else action.value = 'resizing';
@@ -298,6 +343,7 @@ function handleMousedown(e) {
         canvas.value.style.cursor = cursorForPosition(element.position);
       }
     } else {
+      selectedElement2.value = null;
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
         action.value = 'panning';
         startPanMousePos.value = { x: e.clientX, y: e.clientY };
@@ -365,14 +411,49 @@ function handleMousemove(e) {
     const newY1 = clientY - offsetY;
     const options = type === 'text' ? { text: selectedElement.value.text } : {};
     updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, shapeNumber, options);
+
+    selectedElement2.value = {
+      ...selectedElement.value,
+      x1: newX1,
+      y1: newY1,
+      x2: newX1 + width,
+      y2: newY1 + height,
+      canvasShape: {
+        ...selectedElement.value.canvasShape,
+        x: newX1,
+        y: newY1,
+        width,
+        height,
+      }
+    };
   } else if (action.value === 'resizing') {
     if (!selectedElement.value || !selectedElement.value.position) return;
 
     const { id, type, position, x1, y1, x2, y2, shapeNumber } = selectedElement.value;
     const coords = resizedCoordinates(clientX, clientY, position, { x1, y1, x2, y2 });
     updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
+
+    selectedElement2.value = {
+      ...selectedElement.value,
+      x1: coords.x1,
+      y1: coords.y1,
+      x2: coords.x2,
+      y2: coords.y2,
+      canvasShape: {
+        ...selectedElement.value.canvasShape,
+        x: coords.x1,
+        y: coords.y1,
+        width: coords.x2 - coords.x1,
+        height: coords.y2 - coords.y1,
+      }
+    };
   } else if (action.value === 'none') {
-    const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
+    let element;
+    if (selectedElement.value && selectedElement.value.type === 'frame') {
+      element = getElementAtPosition(ctx, clientX, clientY, elements.value, true);
+    } else {
+      element = getElementAtPosition(ctx, clientX, clientY, elements.value, false);
+    }
     if (canvas.value) {
       canvas.value.style.cursor = element ? cursorForPosition(element.position) : 'default';
     }
@@ -434,6 +515,12 @@ function handleBlur(e) {
   action.value = 'none';
   selectedElement.value = null;
 }
+
+function setSelectedElement(el) {
+  selectedElement.value = { ...el };
+  selectedElement2.value = { ...el };
+  action.value = 'none';
+}
 </script>
 
 <template>
@@ -454,13 +541,77 @@ function handleBlur(e) {
 
     <aside id="sidebar-left">
       <h5>Elements</h5>
-      <div v-for="(element, index) in elements" :key="index">
-        <p>{{ element.title }}</p>
+      <div v-for="el in layers" :key="el.id">
+        <button @click="setSelectedElement(el)">{{ el.title }}</button>
+        <div v-if="el.type === 'frame' && el.children.length > 0">
+          <ul style="padding-left: 8px;">
+            <li v-for="child in el.children" :key="child.id">
+              <button @click="setSelectedElement(child)">{{ child.title }}</button>
+            </li>
+          </ul>
+        </div>
       </div>
     </aside>
 
-    <aside id="sidebar-right">
-      sidebar right
+    <aside class="sidebar-right">
+      <!-- line -->
+      <div v-if="selectedElement2 && selectedElement2.type === 'line'" class="sidebar-right-content">
+        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.x1 }}</p>
+            <p>Y: {{ selectedElement2.y1 }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ Math.abs(selectedElement2.x2 - selectedElement2.x1) }}</p>
+            <p>Height: 0</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- text -->
+      <div v-if="selectedElement2 && selectedElement2.type === 'text'" class="sidebar-right-content">
+        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.x1 }}</p>
+            <p>Y: {{ selectedElement2.y1 }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ parseInt(selectedElement2.x2 - selectedElement2.x1) }}</p>
+            <p>Height: {{ selectedElement2.y2 - selectedElement2.y1 }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- rectangle, ellipse -->
+      <div v-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
+        class="sidebar-right-content">
+        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.canvasShape.x }}</p>
+            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
+            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+          </div>
+        </div>
+      </div>
+
     </aside>
 
     <canvas id="canvas" ref="canvas"></canvas>
@@ -479,7 +630,7 @@ function handleBlur(e) {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 #app {
   width: 100%;
   height: 100vh;
@@ -498,15 +649,35 @@ function handleBlur(e) {
   z-index: 250px;
 }
 
-#sidebar-right {
+.sidebar-right {
   width: 240px;
-  padding: 12px;
+  padding: 16px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   position: absolute;
   top: 0px;
   right: 0px;
   bottom: 0px;
-  z-index: 250px;
+  z-index: 250;
+
+  &-content {
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &_position,
+    &_layout {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+
+      &_items {
+        display: flex;
+        justify-content: space-between;
+      }
+    }
+  }
 }
 
 #canvas {

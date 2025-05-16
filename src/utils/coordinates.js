@@ -79,11 +79,12 @@ export function positionWithinElement(ctx, x, y, element) {
   }
 }
 
-export function getElementAtPosition(ctx, x, y, elements) {
+export function getElementAtPosition(ctx, x, y, elements, isFrame = false) {
   if (!elements || !Array.isArray(elements)) return null;
 
   for (let i = elements.length - 1; i >= 0; i--) {
     const element = elements[i];
+    if (!isFrame && element.type === "frame") continue;
     const position = positionWithinElement(ctx, x, y, element);
     if (position) {
       return { ...element, position };
@@ -148,4 +149,11 @@ export function getShiftedCoordinates(x1, y1, clientX, clientY, type) {
   }
 
   return { newX2, newY2 };
+}
+
+export function isElementInsideFrame(element, frame) {
+  if (!element || !frame) return false;
+  const { x1, y1, x2, y2 } = element;
+  const { x1: frameX1, y1: frameY1, x2: frameX2, y2: frameY2 } = frame;
+  return x1 >= frameX1 && y1 >= frameY1 && x2 <= frameX2 && y2 <= frameY2;
 }

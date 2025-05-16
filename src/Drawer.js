@@ -165,7 +165,7 @@ export class Drawer {
 
     this.ctx.fillStyle = "#000";
     this.ctx.font = "12px Arial";
-    this.ctx.fillText(title, x + 5, y - 5);
+    this.ctx.fillText(title, x, y - 5);
 
     this.ctx.stroke();
   }

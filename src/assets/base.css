@@ -4,6 +4,10 @@
   box-sizing: border-box;
 }
 
+ul {
+  list-style: none;
+}
+
 textarea {
   outline: none;
   border: none;

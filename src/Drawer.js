@@ -12,9 +12,9 @@ export class Generator {
       height,
       options: {
         ...shapeOptions,
-        strokeStyle: shapeOptions.strokeStyle || "black",
-        lineWidth: shapeOptions.lineWidth || 2,
-        fillStyle: shapeOptions.fillStyle || "red",
+        strokeStyle: shapeOptions.strokeStyle || "#d9d9d9",
+        lineWidth: shapeOptions.lineWidth || 1,
+        fillStyle: shapeOptions.fillStyle || "#d9d9d9",
       },
     };
   }
@@ -30,8 +30,8 @@ export class Generator {
       height,
       options: {
         ...shapeOptions,
-        strokeStyle: shapeOptions.strokeStyle || "red",
-        lineWidth: shapeOptions.lineWidth || 2,
+        strokeStyle: shapeOptions.strokeStyle || "white",
+        lineWidth: shapeOptions.lineWidth || 1,
         fillStyle: shapeOptions.fillRect || "white",
       },
     };
@@ -48,7 +48,7 @@ export class Generator {
       y2,
       options: {
         ...shapeOptions,
-        strokeStyle: shapeOptions.strokeStyle || "black",
+        strokeStyle: shapeOptions.strokeStyle || "#d9d9d9",
         lineWidth: shapeOptions.lineWidth || 1,
       },
     };
@@ -74,8 +74,9 @@ export class Generator {
       endAngle,
       options: {
         ...options,
-        strokeStyle: options.strokeStyle || "black",
+        strokeStyle: options.strokeStyle || "#d9d9d9",
         lineWidth: options.lineWidth || 1,
+        fillStyle: options.fillStyle || "#d9d9d9",
       },
     };
   }
@@ -142,6 +143,19 @@ export class Drawer {
 
   _drawEllipse(shape) {
     const { x, y, rX, rY, rotation, startAngle, endAngle, options } = shape;
+    
+    if (options.outsideRect) {
+      const { x, y, width, height } = options.outsideRect;
+      this.ctx.beginPath();
+
+      this.ctx.strokeStyle = options.strokeStyle || "#d9d9d9";
+      this.ctx.fillStyle = options.fillStyle || "#d9d9d9";
+      this.ctx.lineWidth = 1;
+
+      this.ctx.strokeRect(x, y, width, height);
+      this.ctx.stroke();
+    }
+    
     this.ctx.beginPath();
 
     this.ctx.ellipse(x, y, rX, rY, rotation, startAngle, endAngle, false);

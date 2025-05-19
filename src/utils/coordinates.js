@@ -62,9 +62,13 @@ export function positionWithinElement(ctx, x, y, element) {
       const radiusX = Math.abs(x2 - x1) / 2;
       const radiusY = Math.abs(y2 - y1) / 2;
       const ellipseInside =
-        (x - centerX) ** 2 / radiusX ** 2 + (y - centerY) ** 2 / radiusY ** 2 <=
-        1;
-      return ellipseInside ? "inside" : null;
+        (x - centerX) ** 2 / radiusX ** 2 + (y - centerY) ** 2 / radiusY ** 2 <
+        1 ? "inside" : null;
+      const topLeft = nearPoint(x, y, x1, y1, "tl");
+      const topRight = nearPoint(x, y, x2, y1, "tr");
+      const bottomLeft = nearPoint(x, y, x1, y2, "bl");
+      const bottomRight = nearPoint(x, y, x2, y2, "br");
+      return ellipseInside || topLeft || topRight || bottomLeft || bottomRight;
     case "text":
       const textWidth = ctx.measureText(element.text).width;
       const textHeight = 16;

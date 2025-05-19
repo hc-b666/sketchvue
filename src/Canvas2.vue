@@ -12,7 +12,6 @@ import {
   positionWithinElement,
   resizedCoordinates,
 } from './utils/coordinates';
-import { generateHTML2 } from './utils/generateHTML';
 
 String.prototype.toCapitalize = function () {
   return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
@@ -46,6 +45,9 @@ const selectedElement2 = ref(null);
 const panOffset = ref({ x: 0, y: 0 });
 const startPanMousePos = ref({ x: 0, y: 0 });
 const shiftPressed = ref(false);
+const canvaBgColor = ref('#1e1e1e');
+const lastHoveredElement = ref(null);
+const lastHoveredOriginalOptions = ref(null);
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
@@ -97,6 +99,27 @@ watch(
   deep: true,
 }
 );
+watch(
+  () => selectedElement2.value?.canvasShape?.options?.strokeStyle,
+  (newstrokeStyle) => {
+    if (
+      selectedElement2.value &&
+      typeof selectedElement2.value.id === 'number' &&
+      selectedElement2.value.canvasShape &&
+      newstrokeStyle !== undefined
+    ) {
+      const idx = selectedElement2.value.id;
+      const currentElements = elements.value;
+      if (currentElements && currentElements[idx]) {
+        const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
+        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { strokeStyle: newstrokeStyle });
+      }
+    }
+  }, {
+  deep: true,
+}
+);
+
 
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
@@ -174,16 +197,34 @@ function drawElement(drawer, element) {
   switch (element.type) {
     case 'line':
     case 'rectangle':
-    case 'ellipse':
       const options = { ...(element.canvasShape.options || {}) };
       if (isSelected) {
-        options.strokeStyle = "blue";
-        options.lineWidth = 4;
+        options.strokeStyle = '#3498db';
+        options.lineWidth = 2;
       }
       drawer.draw({ ...element.canvasShape, options });
       break;
+    case 'ellipse':
+      const ellipseOptions = { ...(element.canvasShape.options || {}) };
+      if (isSelected && selectedElement2.value.type === 'ellipse') {
+        ellipseOptions.strokeStyle = '#3498db';
+        ellipseOptions.lineWidth = 2;
+        ellipseOptions.outsideRect = {
+          x: element.x1,
+          y: element.y1,
+          width: element.x2 - element.x1,
+          height: element.y2 - element.y1,
+        };
+      }
+      drawer.draw({ ...element.canvasShape, options: ellipseOptions });
+      break;
     case 'frame':
-      drawer.draw(element.canvasShape, { title: element.title });
+      const frameOptions = { ...(element.canvasShape.options || {}) };
+      if (isSelected) {
+        frameOptions.strokeStyle = 'blue';
+        frameOptions.lineWidth = 2;
+      }
+      drawer.draw({ ...element.canvasShape, options: frameOptions }, { title: element.title });
       break;
     case 'text':
       ctx.textBaseline = 'top';
@@ -495,6 +536,50 @@ function handleMousemove(e) {
     if (canvas.value) {
       canvas.value.style.cursor = element ? cursorForPosition(element.position) : 'default';
     }
+
+    if (
+      lastHoveredElement.value &&
+      (!element || element.id !== lastHoveredElement.value.id)
+    ) {
+      const prev = elements.value[lastHoveredElement.value.id];
+      if (prev && prev.canvasShape && prev.canvasShape.options && lastHoveredOriginalOptions.value) {
+        updateElement(
+          prev.id,
+          prev.x1,
+          prev.y1,
+          prev.x2,
+          prev.y2,
+          prev.type,
+          prev.shapeNumber,
+          { ...prev.canvasShape.options, ...lastHoveredOriginalOptions.value }
+        );
+      }
+      lastHoveredElement.value = null;
+      lastHoveredOriginalOptions.value = null;
+    }
+
+    if (element && (!lastHoveredElement.value || element.id !== lastHoveredElement.value.id)) {
+      lastHoveredElement.value = { ...element };
+      lastHoveredOriginalOptions.value = {
+        strokeStyle: element.canvasShape.options?.strokeStyle,
+        lineWidth: element.canvasShape.options?.lineWidth,
+      };
+      const hoverOptions = {
+        ...element.canvasShape.options,
+        strokeStyle: '#3498db',
+        lineWidth: 2,
+      };
+      updateElement(
+        element.id,
+        element.x1,
+        element.y1,
+        element.x2,
+        element.y2,
+        element.type,
+        element.shapeNumber,
+        hoverOptions
+      );
+    }
   }
 }
 
@@ -660,13 +745,18 @@ function setSelectedElement(el) {
             <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
               @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
           </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="strokeStyle">Stroke Style</label>
+            <input id="strokeStyle" type="color" :value="selectedElement2.canvasShape.options.strokeStyle"
+              @input="e => { selectedElement2.canvasShape.options.strokeStyle = e.target.value }" />
+          </div>
         </div>
       </div>
 
       <!-- canvas -->
       <div v-else class="sidebar-right-content">
-        <!-- <span>Canvas</span>
-        <div class="sidebar-right-content_position">
+        <span>Canvas</span>
+        <!-- <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
             <p>X: {{ selectedElement2.canvasShape.x }}</p>
@@ -686,11 +776,16 @@ function setSelectedElement(el) {
           </div>
         </div> -->
 
+        <div class="sidebar-right-content_layout_items">
+          <label for="bgColor">Background Color</label>
+          <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }" />
+        </div>
+
       </div>
 
     </aside>
 
-    <canvas id="canvas" ref="canvas"></canvas>
+    <canvas id="canvas" ref="canvas" :style="{ backgroundColor: canvaBgColor }"></canvas>
     <textarea v-if="action === 'writing'" ref="textarea" :value="selectedElement?.text || ''"
       @input="e => { if (selectedElement) selectedElement.text = e.target.value }" @blur="handleBlur" :style="{
         position: 'absolute',
@@ -715,6 +810,7 @@ function setSelectedElement(el) {
 }
 
 #sidebar-left {
+  color: white;
   width: 240px;
   padding: 12px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -723,11 +819,14 @@ function setSelectedElement(el) {
   left: 0px;
   bottom: 0px;
   z-index: 250px;
+  background-color: oklch(27.4% 0.006 286.033);
 }
 
 .sidebar-right {
+  color: white;
   width: 240px;
   padding: 16px;
+  background-color: oklch(27.4% 0.006 286.033);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   position: absolute;
   top: 0px;
@@ -751,6 +850,10 @@ function setSelectedElement(el) {
       &_items {
         display: flex;
         justify-content: space-between;
+
+        input {
+          background: transparent;
+        }
       }
     }
   }
@@ -763,7 +866,7 @@ function setSelectedElement(el) {
 
 #toolbar {
   padding: 10px;
-  background-color: #f8f9fa;
+  background-color: oklch(27.4% 0.006 286.033);
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   position: absolute;
@@ -794,9 +897,11 @@ function setSelectedElement(el) {
 }
 
 #toolbar button {
+  color: white;
   padding: 5px 10px;
-  background-color: #fff;
-  border: 1px solid #ddd;
+  background: transparent;
+  border: none;
+  outline: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -804,7 +909,7 @@ function setSelectedElement(el) {
 }
 
 #toolbar button:hover {
-  background-color: #f0f0f0;
+  background-color: oklch(37% 0.013 285.805);
 }
 
 #toolbar button.active {

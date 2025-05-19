@@ -178,7 +178,7 @@ export class Drawer {
     this.ctx.fillRect(x, y, width, height);
     this.ctx.strokeRect(x, y, width, height);
 
-    this.ctx.fillStyle = "#000";
+    this.ctx.fillStyle = "gray";
     this.ctx.font = "12px Arial";
     this.ctx.fillText(title, x, y - 5);
 

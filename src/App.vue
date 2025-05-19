@@ -12,6 +12,14 @@ import {
   positionWithinElement,
   resizedCoordinates,
 } from './utils/coordinates';
+import IconMousePointer from './icons/IconMousePointer.vue';
+import IconRectangle from './icons/IconRectangle.vue';
+import IconSlash from './icons/IconSlash.vue';
+import IconCircle from './icons/IconCircle.vue';
+import IconTypeOutline from './icons/IconTypeOutline.vue';
+import IconFrame from './icons/IconFrame.vue';
+import IconUndo from './icons/IconUndo.vue';
+import IconRedo from './icons/IconRedo.vue';
 
 String.prototype.toCapitalize = function () {
   return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
@@ -23,7 +31,7 @@ const textarea = ref(null);
  * @type {CanvasRenderingContext2D}
  */
 let ctx = null;
-const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text', 'frame'];
+const tools = ['selection', 'frame', 'rectangle', 'line', 'ellipse', 'text'];
 /**
  * @type {Generator}
  */
@@ -35,6 +43,15 @@ const numberOfShapes = {
   ellipse: 0,
   text: 0,
   frame: 0,
+};
+
+const toolIcons = {
+  selection: IconMousePointer,
+  rectangle: IconRectangle,
+  line: IconSlash,
+  ellipse: IconCircle,
+  text: IconTypeOutline,
+  frame: IconFrame,
 };
 
 const { state: elements, setState: setElements, undo, redo } = useHistory([]);
@@ -510,7 +527,12 @@ function handleMousemove(e) {
 
     const { id, type, position, x1, y1, x2, y2, shapeNumber } = selectedElement.value;
     const coords = resizedCoordinates(clientX, clientY, position, { x1, y1, x2, y2 });
-    updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
+    if (shiftPressed.value && (type === 'rectangle' || type === 'line' || type === 'ellipse')) {
+      const { newX2, newY2 } = getShiftedCoordinates(coords.x1, coords.y1, coords.x2, coords.y2, type);
+      updateElement(id, coords.x1, coords.y1, newX2, newY2, type, shapeNumber);
+    } else {
+      updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
+    }
 
     selectedElement2.value = {
       ...selectedElement.value,
@@ -567,7 +589,7 @@ function handleMousemove(e) {
       const hoverOptions = {
         ...element.canvasShape.options,
         strokeStyle: '#3498db',
-        lineWidth: 2,
+        lineWidth: 3,
       };
       updateElement(
         element.id,
@@ -650,15 +672,18 @@ function setSelectedElement(el) {
   <div id="app">
     <div id="toolbar">
       <div class="tool-section">
-        <span class="section-title">Mode:</span>
         <button v-for="t in tools" :key="t" @click="tool = t" :class="{ active: tool === t }">
-          {{ t }}
+          <component :is="toolIcons[t]" style="width: 16px; height: 16px;"></component>
         </button>
       </div>
 
       <div class="tool-section">
-        <button @click="undo" title="Undo (Ctrl+Z)">Undo</button>
-        <button @click="redo" title="Redo (Ctrl+Y)">Redo</button>
+        <button @click="undo" title="Undo (Ctrl+Z)">
+          <IconUndo style="width: 16px; height: 16px;" />
+        </button>
+        <button @click="redo" title="Redo (Ctrl+Y)">
+          <IconRedo style="width: 16px; height: 16px;" />
+        </button>
       </div>
     </div>
 
@@ -756,29 +781,11 @@ function setSelectedElement(el) {
       <!-- canvas -->
       <div v-else class="sidebar-right-content">
         <span>Canvas</span>
-        <!-- <div class="sidebar-right-content_position">
-          <h5>Position</h5>
-          <div class="sidebar-right-content_position_items">
-            <p>X: {{ selectedElement2.canvasShape.x }}</p>
-            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
-          </div>
-        </div> -->
-        <!-- <div class="sidebar-right-content_layout">
-          <h5>Layout</h5>
-          <div class="sidebar-right-content_layout_items">
-            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
-            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
-          </div>
-          <div class="sidebar-right-content_layout_items">
-            <label for="fillStyle">Fill Style</label>
-            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
-              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
-          </div>
-        </div> -->
 
-        <div class="sidebar-right-content_layout_items">
-          <label for="bgColor">Background Color</label>
-          <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }" />
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <label for="bgColor" style="font-size: 14px;">Background Color</label>
+          <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }"
+            style="background: transparent;" />
         </div>
 
       </div>
@@ -796,7 +803,8 @@ function setSelectedElement(el) {
         fontSize: '16px',
         whiteSpace: 'pre',
         overflow: 'hidden',
-        color: 'black',
+        color: 'white',
+        background: 'transparent',
       }"></textarea>
   </div>
 </template>
@@ -806,7 +814,7 @@ function setSelectedElement(el) {
   width: 100%;
   height: 100vh;
   position: relative;
-  font-family: Arial, sans-serif;
+  overflow: hidden;
 }
 
 #sidebar-left {
@@ -820,6 +828,24 @@ function setSelectedElement(el) {
   bottom: 0px;
   z-index: 250px;
   background-color: oklch(27.4% 0.006 286.033);
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  button {
+    color: white;
+    text-align: start;
+
+    width: 100%;
+    padding: 7px 10.5px;
+
+    border-radius: 6px;
+    
+    &:hover {
+      background-color: oklch(37% 0.013 285.805);
+    }
+  }
 }
 
 .sidebar-right {
@@ -891,14 +917,13 @@ function setSelectedElement(el) {
   border-right: none;
 }
 
-.section-title {
-  font-size: 12px;
-  color: #666;
-}
-
 #toolbar button {
   color: white;
-  padding: 5px 10px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   background: transparent;
   border: none;
   outline: none;

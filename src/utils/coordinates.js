@@ -1,17 +1,11 @@
 export function adjustElementCoordinates(element) {
   const { type, x1, y1, x2, y2, shapeNumber } = element;
-  if (type === "rectangle" || type === "frame") {
+  if (type === "rectangle" || type === "frame" || type === "ellipse") {
     const minX = Math.min(x1, x2);
     const maxX = Math.max(x1, x2);
     const minY = Math.min(y1, y2);
     const maxY = Math.max(y1, y2);
     return { x1: minX, y1: minY, x2: maxX, y2: maxY, shapeNumber };
-  } else if (type === "ellipse") {
-    const x = (x1 + x2) / 2;
-    const y = (y1 + y2) / 2;
-    const rX = Math.abs(x1 - x2) / 2;
-    const rY = Math.abs(y1 - y2) / 2;
-    return { x, y, rX, rY, shapeNumber };
   } else {
     if (x1 < x2 || (x1 === x2 && y1 < y2)) {
       return { x1, y1, x2, y2, shapeNumber };
@@ -22,7 +16,7 @@ export function adjustElementCoordinates(element) {
 }
 
 export const adjustmentRequired = (type) =>
-  ["line", "rectangle", "frame"].includes(type);
+  ["line", "rectangle", "frame", "ellipse"].includes(type);
 
 export const nearPoint = (x, y, x1, y1, name) => {
   return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
@@ -84,7 +78,21 @@ export function positionWithinElement(ctx, x, y, element) {
       const topRight = nearPoint(x, y, x2, y1, "tr");
       const bottomLeft = nearPoint(x, y, x1, y2, "bl");
       const bottomRight = nearPoint(x, y, x2, y2, "br");
-      return ellipseInside || topLeft || topRight || bottomLeft || bottomRight;
+      const topEllipse = onLine(x1, y1, x2, y1, x, y, 1, "t");
+      const bottomEllipse = onLine(x1, y2, x2, y2, x, y, 1, "b");
+      const leftEllipse = onLine(x1, y1, x1, y2, x, y, 1, "l");
+      const rightEllipse = onLine(x2, y1, x2, y2, x, y, 1, "r");
+      return (
+        ellipseInside ||
+        topLeft ||
+        topRight ||
+        bottomLeft ||
+        bottomRight ||
+        topEllipse ||
+        bottomEllipse ||
+        leftEllipse ||
+        rightEllipse
+      );
     case "text":
       const textWidth = ctx.measureText(element.text).width;
       const textHeight = 16;

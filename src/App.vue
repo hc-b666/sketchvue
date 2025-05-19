@@ -20,6 +20,7 @@ import IconTypeOutline from './icons/IconTypeOutline.vue';
 import IconFrame from './icons/IconFrame.vue';
 import IconUndo from './icons/IconUndo.vue';
 import IconRedo from './icons/IconRedo.vue';
+import IconImage from './icons/IconImage.vue';
 
 String.prototype.toCapitalize = function () {
   return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
@@ -31,7 +32,20 @@ const textarea = ref(null);
  * @type {CanvasRenderingContext2D}
  */
 let ctx = null;
-const tools = ['selection', 'frame', 'rectangle', 'line', 'ellipse', 'text'];
+const tools = ['selection', 'frame', 'rectangle', 'line', 'ellipse', 'text', 'image'];
+function changeTool(newTool) {
+  action.value = 'none';
+  selectedElement.value = null;
+  selectedElement2.value = null;
+
+  if (newTool === 'image') {
+    
+    return;
+  }
+
+  if (tools.includes(newTool)) tool.value = newTool;
+}
+
 /**
  * @type {Generator}
  */
@@ -52,6 +66,7 @@ const toolIcons = {
   ellipse: IconCircle,
   text: IconTypeOutline,
   frame: IconFrame,
+  image: IconImage,
 };
 
 const { state: elements, setState: setElements, undo, redo } = useHistory([]);
@@ -246,6 +261,7 @@ function drawElement(drawer, element) {
     case 'text':
       ctx.textBaseline = 'top';
       ctx.font = '16px Arial';
+      ctx.fillStyle = 'white';
       ctx.fillText(element.text, element.x1, element.y1);
       break;
     default:
@@ -672,7 +688,7 @@ function setSelectedElement(el) {
   <div id="app">
     <div id="toolbar">
       <div class="tool-section">
-        <button v-for="t in tools" :key="t" @click="tool = t" :class="{ active: tool === t }">
+        <button v-for="t in tools" :key="t" @click="changeTool(t)" :class="{ active: tool === t }">
           <component :is="toolIcons[t]" style="width: 16px; height: 16px;"></component>
         </button>
       </div>
@@ -841,7 +857,7 @@ function setSelectedElement(el) {
     padding: 7px 10.5px;
 
     border-radius: 6px;
-    
+
     &:hover {
       background-color: oklch(37% 0.013 285.805);
     }
@@ -891,7 +907,7 @@ function setSelectedElement(el) {
 }
 
 #toolbar {
-  padding: 10px;
+  padding: 6px;
   background-color: oklch(27.4% 0.006 286.033);
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -909,7 +925,7 @@ function setSelectedElement(el) {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 5px;
+  padding-right: 5px;
   border-right: 1px solid #ddd;
 }
 

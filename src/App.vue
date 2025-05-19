@@ -1,513 +1,862 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { generateCode } from './utils/generateCode';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useHistory } from './hooks/useHistory';
+import { Drawer, Generator } from './Drawer';
+import {
+  adjustElementCoordinates,
+  adjustmentRequired,
+  cursorForPosition,
+  getElementAtPosition,
+  getShiftedCoordinates,
+  isElementInsideFrame,
+  positionWithinElement,
+  resizedCoordinates,
+} from './utils/coordinates';
 
-const tabs = reactive(["Canva", "Code"]);
-const activeTab = ref(tabs[0]);
-
-const setActiveTab = (tab) => {
-  activeTab.value = tab;
-};
-
-watch(() => activeTab.value, (newTab) => {
-  if (newTab === 'Canva') {
-    setupCanvas();
-  }
-});
-
-const tree = reactive({
-  id: 'root',
-  type: 'div',
-  className: 'root-container',
-  style: {
-    width: '1200px',
-    height: '800px',
-    position: 'relative',
-    border: '1px solid #000',
-    backgroundColor: 'blue',
-  },
-  children: [],
-});
-
-const layers = reactive({
-  frames: [
-    {
-      id: 'frame-1',
-      title: 'Frame 1',
-      type: 'div',
-      className: 'frame-1',
-      style: {
-        width: '400px',
-        height: '200px',
-        backgroundColor: 'white',
-      },
-      children: [],
-    },
-  ],
-});
+String.prototype.toCapitalize = function () {
+  return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
+}
 
 const canvas = ref(null);
-let selectedRect = ref(null);
-const selectedRectDimensions = reactive({
-  width: 0,
-  height: 0,
-});
+const textarea = ref(null);
+/**
+ * @type {CanvasRenderingContext2D}
+ */
 let ctx = null;
-let draggingRect = null;
-let resizingRect = null;
-let offsetX = 0;
-let offsetY = 0;
-let activeHandle = null;
-const handleSize = 10;
+const tools = ['selection', 'rectangle', 'line', 'ellipse', 'text', 'frame'];
+/**
+ * @type {Generator}
+ */
+const generator = new Generator();
 
-let isDrawing = false;
-let startX = 0;
-let startY = 0;
-let tempRect = null;
+const numberOfShapes = {
+  line: 0,
+  rectangle: 0,
+  ellipse: 0,
+  text: 0,
+  frame: 0,
+};
 
-const isContainerSelected = computed(() => {
-  return selectedRect.value !== null;
-});
-
-function setupCanvas() {
-  canvas.value.width = window.innerWidth;
-  canvas.value.height = window.innerHeight;
-  ctx = canvas.value.getContext('2d');
-  renderTree();
-}
+const { state: elements, setState: setElements, undo, redo } = useHistory([]);
+const action = ref('none');
+const tool = ref('rectangle');
+const selectedElement = ref(null);
+const selectedElement2 = ref(null);
+const panOffset = ref({ x: 0, y: 0 });
+const startPanMousePos = ref({ x: 0, y: 0 });
+const shiftPressed = ref(false);
+const canvaBgColor = ref('#1e1e1e');
+const lastHoveredElement = ref(null);
+const lastHoveredOriginalOptions = ref(null);
 
 onMounted(() => {
-  setupCanvas();
+  ctx = canvas.value.getContext('2d');
+  renderCanvas();
+  autoFocusTextarea();
 
-  canvas.value.addEventListener('mousedown', onMouseDown);
-  canvas.value.addEventListener('mousemove', onMouseMove);
-  canvas.value.addEventListener('mouseup', onMouseUp);
+  canvas.value.addEventListener('mousedown', handleMousedown);
+  canvas.value.addEventListener('mousemove', handleMousemove);
+  canvas.value.addEventListener('mouseup', handleMouseup);
+
+  canvas.value.addEventListener('dblclick', handleDblClick);
+
+  document.addEventListener('keydown', undoredo);
+  document.addEventListener('keyup', handleShiftKeyup);
 });
 
-function renderTree() {
-  ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
-  drawNode(ctx, tree, 0, 0);
+onUnmounted(() => {
+  document.removeEventListener('keydown', undoredo);
+  document.removeEventListener('keyup', handleShiftKeyup);
 
-  if (selectedRect.value) {
-    drawHandles(selectedRect.value);
+  if (canvas.value) {
+    canvas.value.removeEventListener('mousedown', handleMousedown);
+    canvas.value.removeEventListener('mousemove', handleMousemove);
+    canvas.value.removeEventListener('mouseup', handleMouseup);
+
+    canvas.value.removeEventListener('dblclick', handleDblClick);
   }
-}
+});
 
-function drawFrame(frame) {
-
-}
-
-function drawNode(ctx, node, offsetX, offsetY) {
-  if (node.type === 'div') {
-    const { width, height, top = 0, left = 0, backgroundColor } = node.style;
-    drawRect(ctx, node, offsetX + parseInt(left), offsetY + parseInt(top), parseInt(width), parseInt(height), backgroundColor);
-  }
-  node.children.sort((a, b) => a.style.zIndex - b.style.zIndex).forEach((child) => {
-    drawNode(ctx, child, offsetX, offsetY);
-  });
-}
-
-function drawRect(ctx, node, x, y, width, height, color = 'rgba(0, 0, 255, 0.5)') {
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, width, height);
-  ctx.strokeStyle = '#000';
-  ctx.strokeRect(x, y, width, height);
-  ctx.fillText(node.id, x + 5, y + 15);
-}
-
-function drawHandles(rect) {
-  const { left, top, width, height } = rect.style;
-  const rectX = parseInt(left);
-  const rectY = parseInt(top);
-  const rectWidth = parseInt(width);
-  const rectHeight = parseInt(height);
-
-  drawHandle(rectX, rectY);
-  drawHandle(rectX + rectWidth, rectY);
-  drawHandle(rectX, rectY + rectHeight);
-  drawHandle(rectX + rectWidth, rectY + rectHeight);
-
-  drawHandle(rectX + rectWidth / 2, rectY);
-  drawHandle(rectX + rectWidth / 2, rectY + rectHeight);
-  drawHandle(rectX, rectY + rectHeight / 2);
-  drawHandle(rectX + rectWidth, rectY + rectHeight / 2);
-}
-
-function drawHandle(x, y) {
-  ctx.fillStyle = 'white';
-  ctx.strokeStyle = 'black';
-  ctx.beginPath();
-  ctx.arc(x, y, handleSize / 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-}
-
-function addRect() {
-  if (!selectedRect.value) return;
-
-  const newRect = {
-    id: `rect${selectedRect.value.children.length + 1}`,
-    type: 'div',
-    className: 'rect',
-    style: {
-      width: '200px',
-      height: '100px',
-      position: 'absolute',
-      top: `${50 + selectedRect.value.children.length * 20}px`,
-      left: `${50 + selectedRect.value.children.length * 20}px`,
-      backgroundColor: '#ff0000',
-      zIndex: selectedRect.value.children.length + 1,
-    },
-    children: [],
-  };
-
-  selectedRect.value.children.push(newRect);
-  renderTree();
-}
-
-function createFrame() {
-  const newContainer = {
-    id: `container${tree.children.length + 1}`,
-    type: 'div',
-    className: 'flex-container',
-    style: {
-      width: '400px',
-      height: '200px',
-      position: 'absolute',
-      top: `${50 + tree.children.length * 20}px`,
-      left: `${50 + tree.children.length * 20}px`,
-      backgroundColor: 'green',
-      display: 'flex',
-      flexDirection: 'row',
-      justifyContent: 'space-around',
-      alignItems: 'center',
-    },
-    children: [],
-  };
-
-  tree.children.push(newContainer);
-  renderTree();
-}
-
-function removeFrame() {
-  if (!selectedRect.value) return;
-
-  if (selectedRect.value.className && selectedRect.value.className.includes('flex-container')) {
-    const findParentNode = (node, targetNode) => {
-      for (let i = 0; i < node.children.length; i++) {
-        if (node.children[i] === targetNode) {
-          return node;
-        }
-        const found = findParentNode(node.children[i], targetNode);
-        if (found) return found;
-      }
-      return null;
-    };
-
-    const parentNode = findParentNode(tree, selectedRect.value);
-    if (parentNode) {
-      const index = parentNode.children.indexOf(selectedRect.value);
-      if (index > -1) {
-        parentNode.children.splice(index, 1);
-        selectedRect.value = null;
-        renderTree();
-      }
-    }
-  }
-}
-
-function onMouseDown(event) {
-  const { offsetX: mouseX, offsetY: mouseY } = event;
-
-  isDrawing = true;
-  startX = mouseX;
-  startY = mouseY;
-
-  // tempRect = {
-  //   id: `frame-${layers.frames.length + 1}`,
-  //   type: 'div',
-  //   className: 'frame',
-
-  // }
-
-  if (selectedRect.value) {
-    const { left, top, width, height } = selectedRect.value.style;
-    const rectX = parseInt(left);
-    const rectY = parseInt(top);
-    const rectWidth = parseInt(width);
-    const rectHeight = parseInt(height);
-
-    if (isHandleClicked(mouseX, mouseY, rectX, rectY)) {
-      activeHandle = 'top-left';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX + rectWidth, rectY)) {
-      activeHandle = 'top-right';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX, rectY + rectHeight)) {
-      activeHandle = 'bottom-left';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX + rectWidth, rectY + rectHeight)) {
-      activeHandle = 'bottom-right';
-      resizingRect = selectedRect.value;
-      return;
-    }
-    else if (isHandleClicked(mouseX, mouseY, rectX + rectWidth / 2, rectY)) {
-      activeHandle = 'top-center';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX + rectWidth / 2, rectY + rectHeight)) {
-      activeHandle = 'bottom-center';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX, rectY + rectHeight / 2)) {
-      activeHandle = 'left-center';
-      resizingRect = selectedRect.value;
-      return;
-    } else if (isHandleClicked(mouseX, mouseY, rectX + rectWidth, rectY + rectHeight / 2)) {
-      activeHandle = 'right-center';
-      resizingRect = selectedRect.value;
-      return;
-    }
-  }
-
-  const findClickedRect = (node, mouseX, mouseY) => {
-    const { left, top, width, height } = node.style;
-    const rectX = parseInt(left);
-    const rectY = parseInt(top);
-    const rectWidth = parseInt(width);
-    const rectHeight = parseInt(height);
-
+watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed], renderCanvas, { deep: true });
+watch([action, selectedElement], autoFocusTextarea, { deep: true });
+watch(
+  () => selectedElement2.value?.canvasShape?.options?.fillStyle,
+  (newFillStyle) => {
     if (
-      mouseX >= rectX &&
-      mouseX <= rectX + rectWidth &&
-      mouseY >= rectY &&
-      mouseY <= rectY + rectHeight
+      selectedElement2.value &&
+      typeof selectedElement2.value.id === 'number' &&
+      selectedElement2.value.canvasShape &&
+      newFillStyle !== undefined
     ) {
-      return node;
-    }
-
-    const sortedChildren = [...node.children].sort((a, b) =>
-      (b.style.zIndex || 0) - (a.style.zIndex || 0)
-    );
-
-    for (const child of sortedChildren) {
-      const clickedChild = findClickedRect(child, mouseX, mouseY);
-      if (clickedChild) {
-        return clickedChild;
+      const idx = selectedElement2.value.id;
+      const currentElements = elements.value;
+      if (currentElements && currentElements[idx]) {
+        const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
+        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { fillStyle: newFillStyle });
       }
     }
-
-    return null;
-  };
-
-  const clickedRect = findClickedRect(tree, mouseX, mouseY);
-
-  if (clickedRect) {
-    draggingRect = clickedRect;
-    selectedRect.value = clickedRect;
-    selectedRectDimensions.width = parseInt(clickedRect.style.width);
-    selectedRectDimensions.height = parseInt(clickedRect.style.height);
-    const { left, top } = clickedRect.style;
-    offsetX = mouseX - parseInt(left);
-    offsetY = mouseY - parseInt(top);
-    renderTree();
-    return;
-  }
-
-  selectedRect.value = null;
-  renderTree();
+  }, {
+  deep: true,
 }
-
-function onMouseMove(event) {
-  const { offsetX: mouseX, offsetY: mouseY } = event;
-  console.log(isDrawing);
-
-  if (isDrawing) {
-    const width = mouseX - startX;
-    const height = mouseY - startY;
-
-    const rect = {
-      id: `frame-${layers.frames.length + 1}`,
-      type: 'div',
-      className: 'frame',
-      style: {
-        width: `${width}px`,
-        height: `${height}px`,
-        // position: 'absolute',
-        // top: `${startY}px`,
-        // left: `${startX}px`,
-        backgroundColor: 'rgba(0, 0, 255, 0.5)',
-      },
-      children: [],
-    };
-
-    layers.frames.push(rect);
-    renderTree();
-
-    return;
-  }
-
-  if (resizingRect) {
-    const { style } = resizingRect;
-    const rectX = parseInt(style.left);
-    const rectY = parseInt(style.top);
-    const rectWidth = parseInt(style.width);
-    const rectHeight = parseInt(style.height);
-
-    const minSize = 20;
-
-    switch (activeHandle) {
-      case 'top-left':
-        const newWidthTL = Math.max(minSize, rectWidth + (rectX - mouseX));
-        const newHeightTL = Math.max(minSize, rectHeight + (rectY - mouseY));
-        style.left = `${rectX - (newWidthTL - rectWidth)}px`;
-        style.top = `${rectY - (newHeightTL - rectHeight)}px`;
-        style.width = `${newWidthTL}px`;
-        style.height = `${newHeightTL}px`;
-        break;
-
-      case 'top-right':
-        const newWidthTR = Math.max(minSize, mouseX - rectX);
-        const newHeightTR = Math.max(minSize, rectHeight + (rectY - mouseY));
-        style.width = `${newWidthTR}px`;
-        style.top = `${rectY - (newHeightTR - rectHeight)}px`;
-        style.height = `${newHeightTR}px`;
-        break;
-
-      case 'bottom-left':
-        const newWidthBL = Math.max(minSize, rectWidth + (rectX - mouseX));
-        style.left = `${rectX - (newWidthBL - rectWidth)}px`;
-        style.width = `${newWidthBL}px`;
-        style.height = `${Math.max(minSize, mouseY - rectY)}px`;
-        break;
-
-      case 'bottom-right':
-        style.width = `${Math.max(minSize, mouseX - rectX)}px`;
-        style.height = `${Math.max(minSize, mouseY - rectY)}px`;
-        break;
-
-      case 'top-center':
-        const newHeightTC = Math.max(minSize, rectHeight + (rectY - mouseY));
-        style.top = `${rectY - (newHeightTC - rectHeight)}px`;
-        style.height = `${newHeightTC}px`;
-        break;
-
-      case 'bottom-center':
-        style.height = `${Math.max(minSize, mouseY - rectY)}px`;
-        break;
-
-      case 'left-center':
-        const newWidthLC = Math.max(minSize, rectWidth + (rectX - mouseX));
-        style.left = `${rectX - (newWidthLC - rectWidth)}px`;
-        style.width = `${newWidthLC}px`;
-        break;
-
-      case 'right-center':
-        style.width = `${Math.max(minSize, mouseX - rectX)}px`;
-        break;
+);
+watch(
+  () => selectedElement2.value?.canvasShape?.options?.strokeStyle,
+  (newstrokeStyle) => {
+    if (
+      selectedElement2.value &&
+      typeof selectedElement2.value.id === 'number' &&
+      selectedElement2.value.canvasShape &&
+      newstrokeStyle !== undefined
+    ) {
+      const idx = selectedElement2.value.id;
+      const currentElements = elements.value;
+      if (currentElements && currentElements[idx]) {
+        const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
+        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { strokeStyle: newstrokeStyle });
+      }
     }
+  }, {
+  deep: true,
+}
+);
 
-    renderTree();
-    return;
+
+const undoredo = (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
+  else if ((e.metaKey || e.ctrlKey) && e.key === 'y') redo();
+  else if (e.key === 'Shift') shiftPressed.value = true;
+};
+
+function renderCanvas() {
+  if (!canvas.value) return;
+  canvas.value.width = window.innerWidth;
+  canvas.value.height = window.innerHeight;
+  const ctx = canvas.value.getContext('2d');
+  const drawer = new Drawer(ctx);
+
+  drawer.clear();
+  ctx.save();
+  ctx.translate(panOffset.value.x, panOffset.value.y);
+
+  const currentElements = elements.value;
+  if (currentElements && Array.isArray(currentElements)) {
+    currentElements.filter((el) => el.type === 'frame').forEach((el) => {
+      drawElement(drawer, el);
+    });
+    currentElements.filter((el) => el.type !== 'frame').forEach((element) => {
+      if (action.value === 'writing' && selectedElement.value.id === element.id) return;
+      drawElement(drawer, element);
+    });
   }
 
-  if (draggingRect) {
-    draggingRect.style.left = `${mouseX - offsetX}px`;
-    draggingRect.style.top = `${mouseY - offsetY}px`;
-    renderTree();
+  ctx.restore();
+}
+
+function autoFocusTextarea() {
+  if (textarea.value && action.value === 'writing') {
+    setTimeout(() => {
+      textarea.value.focus();
+      textarea.value = selectedElement.value.text;
+    }, 0);
   }
 }
 
-function onMouseUp() {
-  draggingRect = null;
-  resizingRect = null;
-  activeHandle = null;
-  selectedRectDimensions.width = 0;
-  selectedRectDimensions.height = 0;
+function handleShiftKeyup(e) {
+  if (e.key === 'Shift') {
+    shiftPressed.value = false;
+  }
 }
 
-function isHandleClicked(mouseX, mouseY, handleCenterX, handleCenterY) {
-  const handleRadius = handleSize / 2;
-  const distance = Math.sqrt(
-    Math.pow(mouseX - handleCenterX, 2) + Math.pow(mouseY - handleCenterY, 2)
+const layers = computed(() => {
+  const frames = elements.value.filter((el) => el.type === 'frame');
+  const otherElements = elements.value.filter((el) => el.type !== 'frame');
+
+  const insideFrameIds = new Set();
+  frames.forEach(frame => {
+    frame.children = otherElements.filter(child => isElementInsideFrame(child, frame));
+    frame.children.forEach(child => insideFrameIds.add(child.id));
+  });
+
+  const lays = elements.value.filter(el =>
+    el.type === 'frame' || !insideFrameIds.has(el.id)
   );
 
-  return distance <= handleRadius;
+  return lays;
+});
+
+/**
+ * 
+ * @param {Drawer} drawer
+ * @param element 
+ */
+function drawElement(drawer, element) {
+  if (!element) return;
+
+  const isSelected = selectedElement2.value && selectedElement2.value.id === element.id;
+
+  switch (element.type) {
+    case 'line':
+    case 'rectangle':
+      const options = { ...(element.canvasShape.options || {}) };
+      if (isSelected) {
+        options.strokeStyle = '#3498db';
+        options.lineWidth = 2;
+      }
+      drawer.draw({ ...element.canvasShape, options });
+      break;
+    case 'ellipse':
+      const ellipseOptions = { ...(element.canvasShape.options || {}) };
+      if (isSelected && selectedElement2.value.type === 'ellipse') {
+        ellipseOptions.strokeStyle = '#3498db';
+        ellipseOptions.lineWidth = 2;
+        ellipseOptions.outsideRect = {
+          x: element.x1,
+          y: element.y1,
+          width: element.x2 - element.x1,
+          height: element.y2 - element.y1,
+        };
+      }
+      drawer.draw({ ...element.canvasShape, options: ellipseOptions });
+      break;
+    case 'frame':
+      const frameOptions = { ...(element.canvasShape.options || {}) };
+      if (isSelected) {
+        frameOptions.strokeStyle = 'blue';
+        frameOptions.lineWidth = 2;
+      }
+      drawer.draw({ ...element.canvasShape, options: frameOptions }, { title: element.title });
+      break;
+    case 'text':
+      ctx.textBaseline = 'top';
+      ctx.font = '16px Arial';
+      ctx.fillText(element.text, element.x1, element.y1);
+      break;
+    default:
+      console.error('Unknown element type:', element.type);
+  }
+}
+
+function createElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
+  switch (type) {
+    case 'frame':
+      const frameShape = generator.frame(
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.abs(x2 - x1),
+        Math.abs(y2 - y1),
+      );
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Frame ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: frameShape,
+        children: [],
+      };
+    case 'line':
+      const lineShape = generator.line(x1, y1, x2, y2);
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Line ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: lineShape,
+      };
+    case 'rectangle':
+      const rectShape = generator.rectangle(
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.abs(x2 - x1),
+        Math.abs(y2 - y1),
+        options,
+      );
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Rectangle ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: rectShape,
+      };
+    case 'ellipse':
+      const ellipesShape = generator.ellipse(x1, y1, x2, y2);
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Ellipse ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: ellipesShape,
+      };
+    case 'text':
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Text ${shapeNumber}`,
+        shapeNumber,
+        text: "",
+      };
+    default:
+      console.error('Unknown element type:', type);
+      return null;
+  }
+}
+
+function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
+  const currentElements = elements.value;
+  if (!currentElements || !Array.isArray(currentElements)) return;
+
+  const elementsCopy = [...currentElements];
+
+  const existingElement = elementsCopy[id];
+  const existingFillStyle = existingElement?.canvasShape?.options?.fillStyle;
+
+  switch (type) {
+    case 'line':
+    case 'rectangle':
+    case 'ellipse':
+    case 'frame':
+      const newElement = createElement(id, x1, y1, x2, y2, type, shapeNumber, options);
+      if (existingFillStyle && !options.fillStyle) {
+        newElement.canvasShape.options.fillStyle = existingFillStyle;
+      } else if (options.fillStyle) {
+        newElement.canvasShape.options.fillStyle = options.fillStyle;
+      }
+      elementsCopy[id] = newElement;
+      break;
+    case 'text':
+      const text = options.text || "";
+      const textWidth = ctx ? ctx.measureText(text).width : 100;
+      const textHeight = 16;
+
+      elementsCopy[id] = {
+        ...createElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, shapeNumber),
+        text,
+      };
+      break;
+    default:
+      console.error('Unknown element type:', type);
+  }
+
+  setElements(elementsCopy, true);
+}
+
+function getMouseCoordinates(e) {
+  const clientX = e.clientX - panOffset.value.x;
+  const clientY = e.clientY - panOffset.value.y;
+  return { clientX, clientY };
+}
+
+function handleDblClick(e) {
+  if (tool.value !== 'selection') return;
+  const { clientX, clientY } = getMouseCoordinates(e);
+  const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
+  if (element && element.type === 'text' && element.position === 'inside') {
+    selectedElement.value = { ...element, offsetX: clientX - element.x1, offsetY: clientY - element.y1 };
+    action.value = 'writing';
+    setTimeout(() => {
+      if (textarea.value) {
+        textarea.value.focus();
+        textarea.value.value = element.text;
+      }
+    }, 0);
+  }
+}
+
+function handleMousedown(e) {
+  if (action.value === 'writing') return;
+
+  const { clientX, clientY } = getMouseCoordinates(e);
+
+  if (selectedElement.value && selectedElement.value.type === 'frame') {
+    const position = positionWithinElement(ctx, clientX, clientY, selectedElement.value);
+
+    if (position && position !== 'inside') {
+      action.value = 'resizing';
+      selectedElement.value = { ...selectedElement.value, position, offsetX: clientX - selectedElement.value.x1, offsetY: clientY - selectedElement.value.y1 };
+      selectedElement2.value = { ...selectedElement.value };
+    } else if (position === 'inside') {
+      action.value = 'moving';
+      selectedElement.value = { ...selectedElement.value, position, offsetX: clientX - selectedElement.value.x1, offsetY: clientY - selectedElement.value.y1 };
+      selectedElement2.value = { ...selectedElement.value };
+    }
+
+    if (canvas.value) {
+      canvas.value.style.cursor = cursorForPosition(selectedElement.value.position);
+    }
+
+    return;
+  }
+
+  if (tool.value === 'selection') {
+    const element = getElementAtPosition(ctx, clientX, clientY, elements.value);
+    if (element) {
+      const offsetX = clientX - element.x1;
+      const offsetY = clientY - element.y1;
+
+      selectedElement.value = { ...element, offsetX, offsetY };
+      selectedElement2.value = { ...element, offsetX, offsetY };
+
+      if (element.position === 'inside') action.value = 'moving';
+      else action.value = 'resizing';
+
+      if (canvas.value) {
+        canvas.value.style.cursor = cursorForPosition(element.position);
+      }
+    } else {
+      selectedElement2.value = null;
+      if (e.button === 1 || (e.button === 0 && e.altKey)) {
+        action.value = 'panning';
+        startPanMousePos.value = { x: e.clientX, y: e.clientY };
+      }
+    }
+  } else {
+    const currentElements = elements.value || [];
+    const id = currentElements.length;
+    const shapeNumber = ++numberOfShapes[tool.value];
+    const element = createElement(id, clientX, clientY, clientX, clientY, tool.value, shapeNumber);
+
+    setElements([...currentElements, element]);
+    selectedElement.value = element;
+
+    action.value = tool.value === 'text' ? 'writing' : 'drawing';
+
+    if (tool.value === 'text') {
+      setTimeout(() => {
+        if (textarea.value) {
+          textarea.value.focus();
+          textarea.value.value = '';
+        }
+      }, 0);
+    }
+  }
+}
+
+function handleMousemove(e) {
+  const { clientX, clientY } = getMouseCoordinates(e);
+
+  if (action.value === 'panning') {
+    const deltaX = e.clientX - startPanMousePos.value.x;
+    const deltaY = e.clientY - startPanMousePos.value.y;
+    panOffset.value = {
+      x: panOffset.value.x + deltaX,
+      y: panOffset.value.y + deltaY
+    };
+    startPanMousePos.value = {
+      x: e.clientX,
+      y: e.clientY,
+    };
+    return;
+  }
+
+  if (action.value === 'drawing') {
+    const currentElements = elements.value;
+    if (!currentElements || !Array.isArray(currentElements) || currentElements.length === 0) return;
+
+    const index = currentElements.length - 1;
+    const { x1, y1, shapeNumber, type } = currentElements[index];
+
+    if (shiftPressed.value && (type === 'rectangle' || type === 'line' || type === 'ellipse' || type === 'frame')) {
+      const { newX2, newY2 } = getShiftedCoordinates(x1, y1, clientX, clientY, type);
+      updateElement(index, x1, y1, newX2, newY2, type, shapeNumber);
+    } else {
+      updateElement(index, x1, y1, clientX, clientY, tool.value, shapeNumber);
+    }
+  } else if (action.value === 'moving') {
+    if (!selectedElement.value) return;
+
+    const { id, x1, x2, y1, y2, type, offsetX, offsetY, shapeNumber } = selectedElement.value;
+    const width = x2 - x1;
+    const height = y2 - y1;
+    const newX1 = clientX - offsetX;
+    const newY1 = clientY - offsetY;
+    const options = type === 'text' ? { text: selectedElement.value.text } : {};
+    updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, shapeNumber, options);
+
+    selectedElement2.value = {
+      ...selectedElement.value,
+      x1: newX1,
+      y1: newY1,
+      x2: newX1 + width,
+      y2: newY1 + height,
+      canvasShape: {
+        ...selectedElement.value.canvasShape,
+        x: newX1,
+        y: newY1,
+        width,
+        height,
+      },
+    };
+  } else if (action.value === 'resizing') {
+    if (!selectedElement.value || !selectedElement.value.position) return;
+
+    const { id, type, position, x1, y1, x2, y2, shapeNumber } = selectedElement.value;
+    const coords = resizedCoordinates(clientX, clientY, position, { x1, y1, x2, y2 });
+    updateElement(id, coords.x1, coords.y1, coords.x2, coords.y2, type, shapeNumber);
+
+    selectedElement2.value = {
+      ...selectedElement.value,
+      x1: coords.x1,
+      y1: coords.y1,
+      x2: coords.x2,
+      y2: coords.y2,
+      canvasShape: {
+        ...selectedElement.value.canvasShape,
+        x: coords.x1,
+        y: coords.y1,
+        width: coords.x2 - coords.x1,
+        height: coords.y2 - coords.y1,
+      }
+    };
+  } else if (action.value === 'none') {
+    let element;
+    if (selectedElement.value && selectedElement.value.type === 'frame') {
+      element = getElementAtPosition(ctx, clientX, clientY, elements.value, true);
+    } else {
+      element = getElementAtPosition(ctx, clientX, clientY, elements.value, false);
+    }
+    if (canvas.value) {
+      canvas.value.style.cursor = element ? cursorForPosition(element.position) : 'default';
+    }
+
+    if (
+      lastHoveredElement.value &&
+      (!element || element.id !== lastHoveredElement.value.id)
+    ) {
+      const prev = elements.value[lastHoveredElement.value.id];
+      if (prev && prev.canvasShape && prev.canvasShape.options && lastHoveredOriginalOptions.value) {
+        updateElement(
+          prev.id,
+          prev.x1,
+          prev.y1,
+          prev.x2,
+          prev.y2,
+          prev.type,
+          prev.shapeNumber,
+          { ...prev.canvasShape.options, ...lastHoveredOriginalOptions.value }
+        );
+      }
+      lastHoveredElement.value = null;
+      lastHoveredOriginalOptions.value = null;
+    }
+
+    if (element && (!lastHoveredElement.value || element.id !== lastHoveredElement.value.id)) {
+      lastHoveredElement.value = { ...element };
+      lastHoveredOriginalOptions.value = {
+        strokeStyle: element.canvasShape.options?.strokeStyle,
+        lineWidth: element.canvasShape.options?.lineWidth,
+      };
+      const hoverOptions = {
+        ...element.canvasShape.options,
+        strokeStyle: '#3498db',
+        lineWidth: 2,
+      };
+      updateElement(
+        element.id,
+        element.x1,
+        element.y1,
+        element.x2,
+        element.y2,
+        element.type,
+        element.shapeNumber,
+        hoverOptions
+      );
+    }
+  }
+}
+
+function handleMouseup(e) {
+  const { clientX, clientY } = getMouseCoordinates(e);
+
+  if (selectedElement.value) {
+    if (
+      selectedElement.value.type === 'text' &&
+      clientX - selectedElement.value.offsetX === selectedElement.value.x1 &&
+      clientY - selectedElement.value.offsetY === selectedElement.value.y1
+    ) {
+      action.value = 'writing';
+      return;
+    }
+
+    const index = selectedElement.value.id;
+    const currentElements = elements.value;
+    if (!currentElements || !Array.isArray(currentElements) || !currentElements[index]) {
+      action.value = 'none';
+      selectedElement.value = null;
+      return;
+    }
+
+    const { id, type } = currentElements[index];
+    if ((action.value === 'drawing' || action.value === 'resizing') && adjustmentRequired(type)) {
+      const { x1, y1, x2, y2, shapeNumber } = adjustElementCoordinates(currentElements[index]);
+      updateElement(id, x1, y1, x2, y2, type, shapeNumber);
+    }
+  }
+
+  if (action.value === 'writing') return;
+
+  if (canvas.value) {
+    canvas.value.style.cursor = 'default';
+  }
+
+  tool.value = 'selection';
+  action.value = 'none';
+  selectedElement.value = null;
+}
+
+function handleBlur(e) {
+  if (!selectedElement.value) return;
+
+  const { id, x1, y1, type, shapeNumber } = selectedElement.value;
+  const text = e.target.value;
+
+  if (text && text.trim() !== '') {
+    const textWidth = ctx.measureText(text).width || 100;
+    const textHeight = 16;
+
+    updateElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type, shapeNumber, { text });
+  }
+
+  action.value = 'none';
+  selectedElement.value = null;
+}
+
+function setSelectedElement(el) {
+  selectedElement.value = { ...el };
+  selectedElement2.value = { ...el };
+  action.value = 'none';
 }
 </script>
 
 <template>
-  <div class="app">
-    <aside class="sidebar">
-      <h2>Layers</h2>
-      <ul>
-        <li v-for="frame in layers.frames" :key="frame.id">
-          <span>{{ frame.title }}</span>
-        </li>
-      </ul>
-    </aside>
+  <div id="app">
     <div id="toolbar">
-      <button v-if="isContainerSelected" @click="addRect">Rectangle</button>
-      <button v-if="isContainerSelected" @click="removeFrame">Remove Frame</button>
-      <button @click="createFrame">Create Frame</button>
-      <button v-for="tab in tabs" :key="tab" @click="setActiveTab(tab)" :class="{ active: activeTab === tab }">{{ tab
-        }}</button>
+      <div class="tool-section">
+        <span class="section-title">Mode:</span>
+        <button v-for="t in tools" :key="t" @click="tool = t" :class="{ active: tool === t }">
+          {{ t }}
+        </button>
+      </div>
+
+      <div class="tool-section">
+        <button @click="undo" title="Undo (Ctrl+Z)">Undo</button>
+        <button @click="redo" title="Redo (Ctrl+Y)">Redo</button>
+      </div>
     </div>
-    <canvas v-show="activeTab === 'Canva'" id="canvas" ref="canvas"></canvas>
-    <div v-show="activeTab === 'Code'" id="code">
-      <pre>{{ generateCode(tree).html }}</pre>
-      <pre>{{ generateCode(tree).css }}</pre>
-    </div>
+
+    <aside id="sidebar-left">
+      <h5>Elements</h5>
+      <div v-for="el in layers" :key="el.id">
+        <button @click="setSelectedElement(el)">
+          {{ el.title }}
+        </button>
+        <div v-if="el.type === 'frame' && el.children.length > 0">
+          <ul style="padding-left: 8px;">
+            <li v-for="child in el.children" :key="child.id">
+              <button @click="setSelectedElement(child)">
+                {{ child.title }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <aside class="sidebar-right">
+      <!-- line -->
+      <div v-if="selectedElement2 && selectedElement2.type === 'line'" class="sidebar-right-content">
+        <span>
+          {{ selectedElement2.type.toCapitalize() }}
+        </span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.x1 }}</p>
+            <p>Y: {{ selectedElement2.y1 }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ Math.abs(selectedElement2.x2 - selectedElement2.x1) }}</p>
+            <p>Height: 0</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- text -->
+      <div v-else-if="selectedElement2 && selectedElement2.type === 'text'" class="sidebar-right-content">
+        <span>
+          {{ selectedElement2.type.toCapitalize() }}
+        </span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.x1 }}</p>
+            <p>Y: {{ selectedElement2.y1 }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ parseInt(selectedElement2.x2 - selectedElement2.x1) }}</p>
+            <p>Height: {{ selectedElement2.y2 - selectedElement2.y1 }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- rectangle, ellipse -->
+      <div v-else-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
+        class="sidebar-right-content">
+        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.canvasShape.x }}</p>
+            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
+          </div>
+        </div>
+        <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
+            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+          </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="fillStyle">Fill Style</label>
+            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
+              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
+          </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="strokeStyle">Stroke Style</label>
+            <input id="strokeStyle" type="color" :value="selectedElement2.canvasShape.options.strokeStyle"
+              @input="e => { selectedElement2.canvasShape.options.strokeStyle = e.target.value }" />
+          </div>
+        </div>
+      </div>
+
+      <!-- canvas -->
+      <div v-else class="sidebar-right-content">
+        <span>Canvas</span>
+        <!-- <div class="sidebar-right-content_position">
+          <h5>Position</h5>
+          <div class="sidebar-right-content_position_items">
+            <p>X: {{ selectedElement2.canvasShape.x }}</p>
+            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
+          </div>
+        </div> -->
+        <!-- <div class="sidebar-right-content_layout">
+          <h5>Layout</h5>
+          <div class="sidebar-right-content_layout_items">
+            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
+            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+          </div>
+          <div class="sidebar-right-content_layout_items">
+            <label for="fillStyle">Fill Style</label>
+            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
+              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
+          </div>
+        </div> -->
+
+        <div class="sidebar-right-content_layout_items">
+          <label for="bgColor">Background Color</label>
+          <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }" />
+        </div>
+
+      </div>
+
+    </aside>
+
+    <canvas id="canvas" ref="canvas" :style="{ backgroundColor: canvaBgColor }"></canvas>
+    <textarea v-if="action === 'writing'" ref="textarea" :value="selectedElement?.text || ''"
+      @input="e => { if (selectedElement) selectedElement.text = e.target.value }" @blur="handleBlur" :style="{
+        position: 'absolute',
+        top: `${selectedElement?.y1 - 2 + panOffset.y}px`,
+        left: `${selectedElement?.x1 + panOffset.x}px`,
+        zIndex: 100,
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        whiteSpace: 'pre',
+        overflow: 'hidden',
+        color: 'black',
+      }"></textarea>
   </div>
 </template>
 
-<style scoped>
-.app {
+<style lang="scss" scoped>
+#app {
   width: 100%;
   height: 100vh;
   position: relative;
+  font-family: Arial, sans-serif;
 }
 
-.sidebar {
-  width: 200px;
-
-  position: absolute;
-  top: 100px;
-  left: 0px;
-  bottom: 100px;
-  background-color: red;
-}
-
-#toolbar {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1000;
-  background-color: #f0f0f0;
-  padding: 10px;
-  border-radius: 4px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-}
-
-#toolbar button {
-  margin-right: 8px;
-  padding: 5px 10px;
-  background-color: #4CAF50;
+#sidebar-left {
   color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+  width: 240px;
+  padding: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  bottom: 0px;
+  z-index: 250px;
+  background-color: oklch(27.4% 0.006 286.033);
 }
 
-#toolbar button:hover {
-  background-color: #45a049;
-}
+.sidebar-right {
+  color: white;
+  width: 240px;
+  padding: 16px;
+  background-color: oklch(27.4% 0.006 286.033);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  bottom: 0px;
+  z-index: 250;
 
-#toolbar button.active {
-  background-color: #2196F3;
+  &-content {
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &_position,
+    &_layout {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+
+      &_items {
+        display: flex;
+        justify-content: space-between;
+
+        input {
+          background: transparent;
+        }
+      }
+    }
+  }
 }
 
 #canvas {
@@ -515,18 +864,68 @@ function isHandleClicked(mouseX, mouseY, handleCenterX, handleCenterY) {
   height: 100%;
 }
 
-#code {
-  width: 100%;
-  height: 100%;
-  background-color: #f0f0f0;
-  padding: 20px;
-  padding-top: 80px;
+#toolbar {
+  padding: 10px;
+  background-color: oklch(27.4% 0.006 286.033);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  z-index: 100;
 }
 
-#code pre {
-  background: #f7f9fc;
-  padding: 20px;
-  border-radius: 6px;
-  overflow: auto;
+.tool-section {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 5px;
+  border-right: 1px solid #ddd;
+}
+
+.tool-section:last-child {
+  border-right: none;
+}
+
+.section-title {
+  font-size: 12px;
+  color: #666;
+}
+
+#toolbar button {
+  color: white;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+#toolbar button:hover {
+  background-color: oklch(37% 0.013 285.805);
+}
+
+#toolbar button.active {
+  background-color: #3498db;
+  color: white;
+  border-color: #2980b9;
+}
+
+#toolbar button.danger {
+  background-color: #fff;
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+#toolbar button.danger:hover {
+  background-color: #e74c3c;
+  color: white;
 }
 </style>

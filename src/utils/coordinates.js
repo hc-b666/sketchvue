@@ -31,12 +31,12 @@ export const nearPoint = (x, y, x1, y1, name) => {
 export const distance = (a, b) =>
   Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
 
-export function onLine(x1, y1, x2, y2, x, y, maxDistance = 1) {
+export function onLine(x1, y1, x2, y2, x, y, maxDistance = 1, name = "inside") {
   const a = { x: x1, y: y1 };
   const b = { x: x2, y: y2 };
   const c = { x, y };
   const offset = distance(a, b) - (distance(a, c) + distance(b, c));
-  return Math.abs(offset) < maxDistance ? "inside" : null;
+  return Math.abs(offset) < maxDistance ? name : null;
 }
 
 export function positionWithinElement(ctx, x, y, element) {
@@ -50,12 +50,26 @@ export function positionWithinElement(ctx, x, y, element) {
       return start || end || on;
     case "rectangle":
     case "frame":
+      const top = onLine(x1, y1, x2, y1, x, y, 1, "t");
+      const bottom = onLine(x1, y2, x2, y2, x, y, 1, "b");
+      const left = onLine(x1, y1, x1, y2, x, y, 1, "l");
+      const right = onLine(x2, y1, x2, y2, x, y, 1, "r");
       const topleft = nearPoint(x, y, x1, y1, "tl");
       const topright = nearPoint(x, y, x2, y1, "tr");
       const bottomleft = nearPoint(x, y, x1, y2, "bl");
       const bottomright = nearPoint(x, y, x2, y2, "br");
       const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
-      return topleft || topright || bottomleft || bottomright || inside;
+      return (
+        topleft ||
+        topright ||
+        bottomleft ||
+        bottomright ||
+        inside ||
+        top ||
+        bottom ||
+        left ||
+        right
+      );
     case "ellipse":
       const centerX = (x1 + x2) / 2;
       const centerY = (y1 + y2) / 2;
@@ -63,7 +77,9 @@ export function positionWithinElement(ctx, x, y, element) {
       const radiusY = Math.abs(y2 - y1) / 2;
       const ellipseInside =
         (x - centerX) ** 2 / radiusX ** 2 + (y - centerY) ** 2 / radiusY ** 2 <
-        1 ? "inside" : null;
+        1
+          ? "inside"
+          : null;
       const topLeft = nearPoint(x, y, x1, y1, "tl");
       const topRight = nearPoint(x, y, x2, y1, "tr");
       const bottomLeft = nearPoint(x, y, x1, y2, "bl");
@@ -107,6 +123,12 @@ export const cursorForPosition = (position) => {
     case "tr":
     case "bl":
       return "nesw-resize";
+    case "t":
+    case "b":
+      return "ns-resize";
+    case "l":
+    case "r":
+      return "ew-resize";
     case "inside":
       return "move";
     default:
@@ -127,6 +149,14 @@ export function resizedCoordinates(clientX, clientY, position, coordinates) {
     case "br":
     case "end":
       return { x1, y1, x2: clientX, y2: clientY };
+    case "t":
+      return { x1, y1: clientY, x2, y2 };
+    case "b":
+      return { x1, y1, x2, y2: clientY };
+    case "l":
+      return { x1: clientX, y1, x2, y2 };
+    case "r":
+      return { x1, y1, x2: clientX, y2 };
     default:
       return { x1, y1, x2, y2 };
   }

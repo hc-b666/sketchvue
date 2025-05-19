@@ -75,7 +75,7 @@ onUnmounted(() => {
   }
 });
 
-watch([elements, action, selectedElement, panOffset, shiftPressed], renderCanvas, { deep: true });
+watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed], renderCanvas, { deep: true });
 watch([action, selectedElement], autoFocusTextarea, { deep: true });
 watch(
   () => selectedElement2.value?.canvasShape?.options?.fillStyle,
@@ -97,6 +97,7 @@ watch(
   deep: true,
 }
 );
+
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
   else if ((e.metaKey || e.ctrlKey) && e.key === 'y') redo();
@@ -168,11 +169,18 @@ const layers = computed(() => {
 function drawElement(drawer, element) {
   if (!element) return;
 
+  const isSelected = selectedElement2.value && selectedElement2.value.id === element.id;
+
   switch (element.type) {
     case 'line':
     case 'rectangle':
     case 'ellipse':
-      drawer.draw(element.canvasShape);
+      const options = { ...(element.canvasShape.options || {}) };
+      if (isSelected) {
+        options.strokeStyle = "blue";
+        options.lineWidth = 4;
+      }
+      drawer.draw({ ...element.canvasShape, options });
       break;
     case 'frame':
       drawer.draw(element.canvasShape, { title: element.title });
@@ -187,7 +195,7 @@ function drawElement(drawer, element) {
   }
 }
 
-function createElement(id, x1, y1, x2, y2, type, shapeNumber) {
+function createElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
   switch (type) {
     case 'frame':
       const frameShape = generator.frame(
@@ -226,7 +234,8 @@ function createElement(id, x1, y1, x2, y2, type, shapeNumber) {
         Math.min(x1, x2),
         Math.min(y1, y2),
         Math.abs(x2 - x1),
-        Math.abs(y2 - y1)
+        Math.abs(y2 - y1),
+        options,
       );
       return {
         id,
@@ -284,7 +293,7 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
     case 'rectangle':
     case 'ellipse':
     case 'frame':
-      const newElement = createElement(id, x1, y1, x2, y2, type, shapeNumber);
+      const newElement = createElement(id, x1, y1, x2, y2, type, shapeNumber, options);
       if (existingFillStyle && !options.fillStyle) {
         newElement.canvasShape.options.fillStyle = existingFillStyle;
       } else if (options.fillStyle) {

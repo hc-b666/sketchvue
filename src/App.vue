@@ -77,6 +77,7 @@ const canvaBgColor = ref('#1e1e1e');
 const lastHoveredElement = ref(null);
 const lastHoveredOriginalOptions = ref(null);
 const viewPaddingsPressed = ref(false);
+const zoomLevel = ref(1);
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
@@ -91,6 +92,8 @@ onMounted(() => {
 
   document.addEventListener('keydown', undoredo);
   document.addEventListener('keyup', handleShiftKeyup);
+
+  canvas.value.addEventListener('wheel', handleWheelZoom);
 });
 
 onUnmounted(() => {
@@ -103,51 +106,48 @@ onUnmounted(() => {
     canvas.value.removeEventListener('mouseup', handleMouseup);
 
     canvas.value.removeEventListener('dblclick', handleDblClick);
+    canvas.value.removeEventListener('wheel', handleWheelZoom);
   }
 });
 
-watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed, viewPaddingsPressed], renderCanvas, { deep: true });
+watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed, viewPaddingsPressed, zoomLevel], renderCanvas, { deep: true });
 watch([action, selectedElement], autoFocusTextarea, { deep: true });
 watch(
-  () => selectedElement2.value?.canvasShape?.options?.fillStyle,
-  (newFillStyle) => {
+  [
+    () => selectedElement2.value?.canvasShape?.options?.fillStyle,
+    () => selectedElement2.value?.canvasShape?.options?.strokeStyle,
+    () => selectedElement2.value?.canvasShape?.options?.borderRadius,
+  ],
+  ([newFillStyle, newStrokeStyle, newBorderRadius], [oldFillStyle, oldStrokeStyle, oldBorderRadius]) => {
     if (
       selectedElement2.value &&
       typeof selectedElement2.value.id === 'number' &&
-      selectedElement2.value.canvasShape &&
-      newFillStyle !== undefined
+      selectedElement2.value.canvasShape
     ) {
       const idx = selectedElement2.value.id;
       const currentElements = elements.value;
       if (currentElements && currentElements[idx]) {
         const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
-        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { fillStyle: newFillStyle });
+        const options = {};
+        if (newFillStyle !== undefined && newFillStyle !== oldFillStyle) options.fillStyle = newFillStyle;
+        if (newStrokeStyle !== undefined && newStrokeStyle !== oldStrokeStyle) options.strokeStyle = newStrokeStyle;
+        if (newBorderRadius !== undefined && newBorderRadius !== oldBorderRadius) options.borderRadius = newBorderRadius;
+        if (Object.keys(options).length > 0) {
+          updateElement(idx, x1, y1, x2, y2, type, shapeNumber, options);
+        }
       }
     }
-  }, {
-  deep: true,
-}
+  },
+  { deep: true }
 );
-watch(
-  () => selectedElement2.value?.canvasShape?.options?.strokeStyle,
-  (newstrokeStyle) => {
-    if (
-      selectedElement2.value &&
-      typeof selectedElement2.value.id === 'number' &&
-      selectedElement2.value.canvasShape &&
-      newstrokeStyle !== undefined
-    ) {
-      const idx = selectedElement2.value.id;
-      const currentElements = elements.value;
-      if (currentElements && currentElements[idx]) {
-        const { x1, y1, x2, y2, type, shapeNumber } = currentElements[idx];
-        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, { strokeStyle: newstrokeStyle });
-      }
-    }
-  }, {
-  deep: true,
+
+function zoomIn() {
+  zoomLevel.value = Math.min(zoomLevel.value + 0.1, 3);
 }
-);
+
+function zoomOut() {
+  zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.5);
+}
 
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
@@ -166,6 +166,7 @@ function renderCanvas() {
   drawer.clear();
   ctx.save();
   ctx.translate(panOffset.value.x, panOffset.value.y);
+  ctx.scale(zoomLevel.value, zoomLevel.value);
 
   const currentElements = elements.value;
   if (currentElements && Array.isArray(currentElements)) {
@@ -206,9 +207,9 @@ function renderCanvas() {
       ctx.lineTo(centerX, y1);
       ctx.stroke();
       ctx.fillText(
-        paddings.paddingTop,
+        parseInt(paddings.paddingTop),
         centerX + 6,
-        fy1 + (paddings.paddingTop) / 2
+        fy1 + parseInt((paddings.paddingTop)) / 2
       );
 
       ctx.beginPath();
@@ -216,7 +217,7 @@ function renderCanvas() {
       ctx.lineTo(centerX, fy2);
       ctx.stroke();
       ctx.fillText(
-        paddings.paddingBottom,
+        parseInt(paddings.paddingBottom),
         centerX + 6,
         y2 + (paddings.paddingBottom) / 2
       );
@@ -226,8 +227,8 @@ function renderCanvas() {
       ctx.lineTo(x1, centerY);
       ctx.stroke();
       ctx.fillText(
-        paddings.paddingLeft,
-        fx1 + (paddings.paddingLeft) / 2,
+        parseInt(paddings.paddingLeft),
+        fx1 + parseInt((paddings.paddingLeft)) / 2,
         centerY - 8
       );
 
@@ -236,8 +237,8 @@ function renderCanvas() {
       ctx.lineTo(fx2, centerY);
       ctx.stroke();
       ctx.fillText(
-        paddings.paddingRight,
-        x2 + (paddings.paddingRight) / 2,
+        parseInt(paddings.paddingRight),
+        x2 + parseInt((paddings.paddingRight)) / 2,
         centerY - 8
       );
     }
@@ -276,6 +277,12 @@ const layers = computed(() => {
 
   return lays;
 });
+
+function handleWheelZoom(e) {
+  e.preventDefault();
+  if (e.deltaY < 0) zoomIn();
+  else zoomOut();
+}
 
 function drawElement(drawer, element) {
   if (!element) return;
@@ -365,8 +372,8 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
 }
 
 function getMouseCoordinates(e) {
-  const clientX = e.clientX - panOffset.value.x;
-  const clientY = e.clientY - panOffset.value.y;
+  const clientX = (e.clientX - panOffset.value.x) / zoomLevel.value;
+  const clientY = (e.clientY - panOffset.value.y) / zoomLevel.value;
   return { clientX, clientY };
 }
 
@@ -719,6 +726,7 @@ function handleAlign(align) {
 
     <aside id="sidebar-left">
       <h5>Elements</h5>
+      <p>Zoom level {{ parseInt(zoomLevel * 100) }}</p>
       <div v-for="el in layers" :key="el.id">
         <button @click="setSelectedElement(el)">
           {{ el.title }}
@@ -782,14 +790,14 @@ function handleAlign(align) {
       <div v-else-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
         class="sidebar-right-content">
         <span>{{ selectedElement2.type.toCapitalize() }}</span>
-        <div class="sidebar-right-content_position">
+        <div class="sidebar-right-content_alignment">
           <h5>Alignment</h5>
-          <div class="sidebar-right-content_position_items">
+          <div class="sidebar-right-content_alignment_items">
             <button @click="handleAlign('left-hor')">Left -</button>
             <button @click="handleAlign('center-hor')">Center -</button>
             <button @click="handleAlign('right-hor')">Right -</button>
           </div>
-          <div class="sidebar-right-content_position_items">
+          <div class="sidebar-right-content_alignment_items">
             <button @click="handleAlign('top-ver')">Top |</button>
             <button @click="handleAlign('center-ver')">Center |</button>
             <button @click="handleAlign('bottom-ver')">Bottom |</button>
@@ -819,6 +827,12 @@ function handleAlign(align) {
               @input="e => { selectedElement2.canvasShape.options.strokeStyle = e.target.value }" />
           </div>
         </div>
+        <div>
+          <label for="borderRadius">Border Radius</label>
+          <input id="borderRadius" type="number" :value="selectedElement2.canvasShape.options.borderRadius"
+            @input="e => { selectedElement2.canvasShape.options.borderRadius = e.target.value }" />
+        </div>
+
       </div>
 
       <!-- canvas -->
@@ -911,7 +925,8 @@ function handleAlign(align) {
     gap: 10px;
 
     &_position,
-    &_layout {
+    &_layout,
+    &_alignment {
       display: flex;
       flex-direction: column;
       gap: 5px;
@@ -926,6 +941,15 @@ function handleAlign(align) {
 
         button {
           color: white;
+
+          padding: 4px 10.5px;
+          border-radius: 4px;
+
+          cursor: pointer;
+
+          &:hover {
+            background-color: oklch(37% 0.013 285.805);
+          }
         }
       }
     }

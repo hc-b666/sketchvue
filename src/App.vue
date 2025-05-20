@@ -280,8 +280,24 @@ const layers = computed(() => {
 
 function handleWheelZoom(e) {
   e.preventDefault();
-  if (e.deltaY < 0) zoomIn();
-  else zoomOut();
+
+  const rect = canvas.value.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const beforeZoomX = (mouseX - panOffset.value.x) / zoomLevel.value;
+  const beforeZoomY = (mouseY - panOffset.value.y) / zoomLevel.value;
+
+  let newZoom = zoomLevel.value;
+  if (e.deltaY < 0) newZoom = Math.min(zoomLevel.value + 0.1, 3);
+  else newZoom = Math.max(zoomLevel.value - 0.1, 0.5);
+
+  panOffset.value = {
+    x: mouseX - beforeZoomX * newZoom,
+    y: mouseY - beforeZoomY * newZoom,
+  };
+
+  zoomLevel.value = newZoom;
 }
 
 function drawElement(drawer, element) {

@@ -719,6 +719,17 @@ function handleAlign(align) {
   });
 }
 
+function handleExport() {
+  let canvasUrl = canvas.value.toDataURL('image/png');
+  const createEl = document.createElement('a');
+  createEl.href = canvasUrl;
+
+  createEl.download = 'canvas.png';
+
+  createEl.click();
+  createEl.remove();
+}
+
 </script>
 
 <template>
@@ -757,6 +768,8 @@ function handleAlign(align) {
           </ul>
         </div>
       </div>
+
+      <button @click="handleExport">Export</button>
     </aside>
 
     <aside class="sidebar-right">

@@ -768,14 +768,14 @@ function handleAlign(align) {
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
-            <p>X: {{ selectedElement2.x1 }}</p>
-            <p>Y: {{ selectedElement2.y1 }}</p>
+            <p>X: {{ parseInt(selectedElement2.x1) }}</p>
+            <p>Y: {{ parseInt(selectedElement2.y1) }}</p>
           </div>
         </div>
         <div class="sidebar-right-content_layout">
           <h5>Layout</h5>
           <div class="sidebar-right-content_layout_items">
-            <p>Width: {{ Math.abs(selectedElement2.x2 - selectedElement2.x1) }}</p>
+            <p>Width: {{ parseInt(Math.abs(selectedElement2.x2 - selectedElement2.x1)) }}</p>
             <p>Height: 0</p>
           </div>
         </div>
@@ -789,15 +789,15 @@ function handleAlign(align) {
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
-            <p>X: {{ selectedElement2.x1 }}</p>
-            <p>Y: {{ selectedElement2.y1 }}</p>
+            <p>X: {{ parseInt(selectedElement2.x1) }}</p>
+            <p>Y: {{ parseInt(selectedElement2.y1) }}</p>
           </div>
         </div>
         <div class="sidebar-right-content_layout">
           <h5>Layout</h5>
           <div class="sidebar-right-content_layout_items">
             <p>Width: {{ parseInt(selectedElement2.x2 - selectedElement2.x1) }}</p>
-            <p>Height: {{ selectedElement2.y2 - selectedElement2.y1 }}</p>
+            <p>Height: {{ parseInt(selectedElement2.y2 - selectedElement2.y1) }}</p>
           </div>
         </div>
       </div>
@@ -822,15 +822,15 @@ function handleAlign(align) {
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
-            <p>X: {{ selectedElement2.canvasShape.x }}</p>
-            <p>Y: {{ selectedElement2.canvasShape.y }}</p>
+            <p>X: {{ parseInt(selectedElement2.canvasShape.x) }}</p>
+            <p>Y: {{ parseInt(selectedElement2.canvasShape.y) }}</p>
           </div>
         </div>
         <div class="sidebar-right-content_layout">
           <h5>Layout</h5>
           <div class="sidebar-right-content_layout_items">
-            <p>Width: {{ selectedElement2.canvasShape.width }}</p>
-            <p>Height: {{ selectedElement2.canvasShape.height }}</p>
+            <p>Width: {{ parseInt(selectedElement2.canvasShape.width) }}</p>
+            <p>Height: {{ parseInt(selectedElement2.canvasShape.height) }}</p>
           </div>
           <div class="sidebar-right-content_layout_items">
             <label for="fillStyle">Fill Style</label>

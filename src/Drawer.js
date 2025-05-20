@@ -109,6 +109,8 @@ export function createElement(
         y1,
         x2,
         y2,
+        centerX: (x1 + x2) / 2,
+        centerY: (y1 + y2) / 2,
         title: `Frame ${shapeNumber}`,
         shapeNumber,
         canvasShape: frameShape,
@@ -123,6 +125,8 @@ export function createElement(
         y1,
         x2,
         y2,
+        centerX: (x1 + x2) / 2,
+        centerY: (y1 + y2) / 2,
         title: `Line ${shapeNumber}`,
         shapeNumber,
         canvasShape: lineShape,
@@ -142,6 +146,8 @@ export function createElement(
         y1,
         x2,
         y2,
+        centerX: (x1 + x2) / 2,
+        centerY: (y1 + y2) / 2,
         title: `Rectangle ${shapeNumber}`,
         shapeNumber,
         canvasShape: rectShape,
@@ -155,6 +161,8 @@ export function createElement(
         y1,
         x2,
         y2,
+        centerX: (x1 + x2) / 2,
+        centerY: (y1 + y2) / 2,
         title: `Ellipse ${shapeNumber}`,
         shapeNumber,
         canvasShape: ellipesShape,
@@ -218,6 +226,9 @@ export class Drawer {
     this.ctx.strokeStyle = options.strokeStyle || "black";
     this.ctx.lineWidth = options.lineWidth || 1;
 
+    // this.ctx.translate(x + width / 2, y + height / 2);
+    // this.ctx.rotate((Math.PI / 180) * 25);
+    // this.ctx.translate(-(x + width / 2), -(y + height / 2));
     this.ctx.fillRect(x, y, width, height);
     this.ctx.strokeRect(x, y, width, height);
 

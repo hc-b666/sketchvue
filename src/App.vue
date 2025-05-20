@@ -277,11 +277,6 @@ const layers = computed(() => {
   return lays;
 });
 
-/**
- * 
- * @param {Drawer} drawer
- * @param element 
- */
 function drawElement(drawer, element) {
   if (!element) return;
 
@@ -366,7 +361,7 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
       console.error('Unknown element type:', type);
   }
 
-  setElements(elementsCopy, true);  
+  setElements(elementsCopy, true);
 }
 
 function getMouseCoordinates(e) {
@@ -659,6 +654,48 @@ function setSelectedElement(el) {
   selectedElement2.value = { ...el };
   action.value = 'none';
 }
+
+function handleAlign(align) {
+  if (selectedElement2.value && selectedElement2.value.type === 'frame') return;
+
+  const frames = elements.value.filter((el) => el.type === 'frame');
+  if (frames.length === 0) return;
+
+  frames.forEach(frame => {
+    if (!isElementInsideFrame(selectedElement2.value, frame)) return;
+
+    const { x1, y1, x2, y2 } = selectedElement2.value;
+    const { x1: fx1, y1: fy1, x2: fx2, y2: fy2 } = frame;
+
+    switch (align) {
+      case 'left-hor':
+        updateElement(selectedElement2.value.id, fx1, y1, fx1 + (x2 - x1), y2, selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      case 'center-hor':
+        const leftpad = ((fx2 - fx1) - (x2 - x1)) / 2;
+        updateElement(selectedElement2.value.id, fx1 + leftpad, y1, fx1 + leftpad + (x2 - x1), y2, selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      case 'right-hor':
+        updateElement(selectedElement2.value.id, x1 + (fx2 - x2), y1, fx2, y2, selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      case 'top-ver':
+        updateElement(selectedElement2.value.id, x1, fy1, x2, fy1 + (y2 - y1), selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      case 'center-ver':
+        const toppad = ((fy2 - fy1) - (y2 - y1)) / 2;
+        updateElement(selectedElement2.value.id, x1, fy1 + toppad, x2, fy1 + toppad + (y2 - y1), selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      case 'bottom-ver':
+        updateElement(selectedElement2.value.id, x1, y1 + (fy2 - y2), x2, fy2, selectedElement2.value.type, selectedElement2.value.shapeNumber);
+        break;
+      default:
+        break;
+    }
+
+    selectedElement2.value = elements.value[selectedElement2.value.id];
+  });
+}
+
 </script>
 
 <template>
@@ -745,6 +782,19 @@ function setSelectedElement(el) {
       <div v-else-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
         class="sidebar-right-content">
         <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        <div class="sidebar-right-content_position">
+          <h5>Alignment</h5>
+          <div class="sidebar-right-content_position_items">
+            <button @click="handleAlign('left-hor')">Left -</button>
+            <button @click="handleAlign('center-hor')">Center -</button>
+            <button @click="handleAlign('right-hor')">Right -</button>
+          </div>
+          <div class="sidebar-right-content_position_items">
+            <button @click="handleAlign('top-ver')">Top |</button>
+            <button @click="handleAlign('center-ver')">Center |</button>
+            <button @click="handleAlign('bottom-ver')">Bottom |</button>
+          </div>
+        </div>
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
@@ -872,6 +922,10 @@ function setSelectedElement(el) {
 
         input {
           background: transparent;
+        }
+
+        button {
+          color: white;
         }
       }
     }

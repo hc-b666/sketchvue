@@ -82,6 +82,101 @@ export class Generator {
   }
 }
 
+const generator = new Generator();
+
+export function createElement(
+  id,
+  x1,
+  y1,
+  x2,
+  y2,
+  type,
+  shapeNumber,
+  options = {}
+) {
+  switch (type) {
+    case "frame":
+      const frameShape = generator.frame(
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.abs(x2 - x1),
+        Math.abs(y2 - y1)
+      );
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Frame ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: frameShape,
+        children: [],
+      };
+    case "line":
+      const lineShape = generator.line(x1, y1, x2, y2);
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Line ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: lineShape,
+      };
+    case "rectangle":
+      const rectShape = generator.rectangle(
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.abs(x2 - x1),
+        Math.abs(y2 - y1),
+        options
+      );
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Rectangle ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: rectShape,
+      };
+    case "ellipse":
+      const ellipesShape = generator.ellipse(x1, y1, x2, y2);
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Ellipse ${shapeNumber}`,
+        shapeNumber,
+        canvasShape: ellipesShape,
+      };
+    case "text":
+      return {
+        id,
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        title: `Text ${shapeNumber}`,
+        shapeNumber,
+        text: "",
+      };
+    default:
+      console.error("Unknown element type:", type);
+      return null;
+  }
+}
+
 export class Drawer {
   /**
    *
@@ -143,7 +238,7 @@ export class Drawer {
 
   _drawEllipse(shape) {
     const { x, y, rX, rY, rotation, startAngle, endAngle, options } = shape;
-    
+
     if (options.outsideRect) {
       const { x, y, width, height } = options.outsideRect;
       this.ctx.beginPath();
@@ -155,16 +250,17 @@ export class Drawer {
       this.ctx.strokeRect(x, y, width, height);
       this.ctx.stroke();
     }
-    
+
     this.ctx.beginPath();
 
     this.ctx.ellipse(x, y, rX, rY, rotation, startAngle, endAngle, false);
 
-    this.ctx.fillStyle = "#000";
-    this.ctx.strokeStyle = options.strokeStyle || "black";
+    this.ctx.fillStyle = options.fillStyle || "#d9d9d9";
+    this.ctx.strokeStyle = options.strokeStyle || "#d9d9d9";
     this.ctx.lineWidth = options.lineWidth || 1;
 
     this.ctx.stroke();
+    this.ctx.fill();
   }
 
   _drawFrame(shape, title) {
@@ -180,7 +276,7 @@ export class Drawer {
 
     this.ctx.fillStyle = "gray";
     this.ctx.font = "12px Arial";
-    this.ctx.fillText(title, x, y - 5);
+    this.ctx.fillText(title, x, y - 8);
 
     this.ctx.stroke();
   }

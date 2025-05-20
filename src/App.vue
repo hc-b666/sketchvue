@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useHistory } from './hooks/useHistory';
-import { Drawer, Generator } from './Drawer';
+import { Drawer, createElement } from './Drawer';
 import {
   adjustElementCoordinates,
   adjustmentRequired,
@@ -11,6 +11,7 @@ import {
   isElementInsideFrame,
   positionWithinElement,
   resizedCoordinates,
+  viewPaddings,
 } from './utils/coordinates';
 import IconMousePointer from './icons/IconMousePointer.vue';
 import IconRectangle from './icons/IconRectangle.vue';
@@ -39,17 +40,12 @@ function changeTool(newTool) {
   selectedElement2.value = null;
 
   if (newTool === 'image') {
-    
+    // handle image upload
     return;
   }
 
   if (tools.includes(newTool)) tool.value = newTool;
 }
-
-/**
- * @type {Generator}
- */
-const generator = new Generator();
 
 const numberOfShapes = {
   line: 0,
@@ -80,6 +76,7 @@ const shiftPressed = ref(false);
 const canvaBgColor = ref('#1e1e1e');
 const lastHoveredElement = ref(null);
 const lastHoveredOriginalOptions = ref(null);
+const viewPaddingsPressed = ref(false);
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
@@ -109,7 +106,7 @@ onUnmounted(() => {
   }
 });
 
-watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed], renderCanvas, { deep: true });
+watch([elements, action, selectedElement, selectedElement2, panOffset, shiftPressed, viewPaddingsPressed], renderCanvas, { deep: true });
 watch([action, selectedElement], autoFocusTextarea, { deep: true });
 watch(
   () => selectedElement2.value?.canvasShape?.options?.fillStyle,
@@ -152,11 +149,11 @@ watch(
 }
 );
 
-
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
   else if ((e.metaKey || e.ctrlKey) && e.key === 'y') redo();
   else if (e.key === 'Shift') shiftPressed.value = true;
+  else if (e.key === 'Control') viewPaddingsPressed.value = true;
 };
 
 function renderCanvas() {
@@ -181,6 +178,71 @@ function renderCanvas() {
     });
   }
 
+  if (
+    viewPaddingsPressed.value &&
+    selectedElement2.value &&
+    selectedElement2.value.type !== 'frame'
+  ) {
+    const frame = elements.value.find(
+      el => el.type === 'frame' && isElementInsideFrame(selectedElement2.value, el)
+    );
+    if (frame) {
+      const paddings = viewPaddings(selectedElement2.value, frame);
+      const { x1, y1, x2, y2 } = selectedElement2.value;
+      const { x1: fx1, y1: fy1, x2: fx2, y2: fy2 } = frame;
+
+      ctx.save();
+      ctx.strokeStyle = 'red';
+      ctx.fillStyle = 'red';
+      ctx.lineWidth = 1;
+      ctx.font = '14px Arial';
+      ctx.textBaseline = 'middle';
+
+      const centerX = x1 + (x2 - x1) / 2;
+      const centerY = y1 + (y2 - y1) / 2;
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, fy1);
+      ctx.lineTo(centerX, y1);
+      ctx.stroke();
+      ctx.fillText(
+        paddings.paddingTop,
+        centerX + 6,
+        fy1 + (paddings.paddingTop) / 2
+      );
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, y2);
+      ctx.lineTo(centerX, fy2);
+      ctx.stroke();
+      ctx.fillText(
+        paddings.paddingBottom,
+        centerX + 6,
+        y2 + (paddings.paddingBottom) / 2
+      );
+
+      ctx.beginPath();
+      ctx.moveTo(fx1, centerY);
+      ctx.lineTo(x1, centerY);
+      ctx.stroke();
+      ctx.fillText(
+        paddings.paddingLeft,
+        fx1 + (paddings.paddingLeft) / 2,
+        centerY - 8
+      );
+
+      ctx.beginPath();
+      ctx.moveTo(x2, centerY);
+      ctx.lineTo(fx2, centerY);
+      ctx.stroke();
+      ctx.fillText(
+        paddings.paddingRight,
+        x2 + (paddings.paddingRight) / 2,
+        centerY - 8
+      );
+    }
+  }
+
   ctx.restore();
 }
 
@@ -194,9 +256,8 @@ function autoFocusTextarea() {
 }
 
 function handleShiftKeyup(e) {
-  if (e.key === 'Shift') {
-    shiftPressed.value = false;
-  }
+  if (e.key === 'Shift') shiftPressed.value = false;
+  else if (e.key === 'Control') viewPaddingsPressed.value = false;
 }
 
 const layers = computed(() => {
@@ -269,90 +330,6 @@ function drawElement(drawer, element) {
   }
 }
 
-function createElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
-  switch (type) {
-    case 'frame':
-      const frameShape = generator.frame(
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.abs(x2 - x1),
-        Math.abs(y2 - y1),
-      );
-      return {
-        id,
-        type,
-        x1,
-        y1,
-        x2,
-        y2,
-        title: `Frame ${shapeNumber}`,
-        shapeNumber,
-        canvasShape: frameShape,
-        children: [],
-      };
-    case 'line':
-      const lineShape = generator.line(x1, y1, x2, y2);
-      return {
-        id,
-        type,
-        x1,
-        y1,
-        x2,
-        y2,
-        title: `Line ${shapeNumber}`,
-        shapeNumber,
-        canvasShape: lineShape,
-      };
-    case 'rectangle':
-      const rectShape = generator.rectangle(
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.abs(x2 - x1),
-        Math.abs(y2 - y1),
-        options,
-      );
-      return {
-        id,
-        type,
-        x1,
-        y1,
-        x2,
-        y2,
-        title: `Rectangle ${shapeNumber}`,
-        shapeNumber,
-        canvasShape: rectShape,
-      };
-    case 'ellipse':
-      const ellipesShape = generator.ellipse(x1, y1, x2, y2);
-      return {
-        id,
-        type,
-        x1,
-        y1,
-        x2,
-        y2,
-        title: `Ellipse ${shapeNumber}`,
-        shapeNumber,
-        canvasShape: ellipesShape,
-      };
-    case 'text':
-      return {
-        id,
-        type,
-        x1,
-        y1,
-        x2,
-        y2,
-        title: `Text ${shapeNumber}`,
-        shapeNumber,
-        text: "",
-      };
-    default:
-      console.error('Unknown element type:', type);
-      return null;
-  }
-}
-
 function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
   const currentElements = elements.value;
   if (!currentElements || !Array.isArray(currentElements)) return;
@@ -389,7 +366,7 @@ function updateElement(id, x1, y1, x2, y2, type, shapeNumber, options = {}) {
       console.error('Unknown element type:', type);
   }
 
-  setElements(elementsCopy, true);
+  setElements(elementsCopy, true);  
 }
 
 function getMouseCoordinates(e) {
@@ -565,7 +542,7 @@ function handleMousemove(e) {
       }
     };
   } else if (action.value === 'none') {
-    let element;
+    let element = getElementAtPosition(ctx, clientX, clientY, elements.value, true);
     if (selectedElement.value && selectedElement.value.type === 'frame') {
       element = getElementAtPosition(ctx, clientX, clientY, elements.value, true);
     } else {

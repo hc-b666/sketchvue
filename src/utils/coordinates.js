@@ -125,8 +125,6 @@ export const cursorForPosition = (position) => {
   switch (position) {
     case "tl":
     case "br":
-    case "start":
-    case "end":
       return "nwse-resize";
     case "tr":
     case "bl":
@@ -138,6 +136,8 @@ export const cursorForPosition = (position) => {
     case "r":
       return "ew-resize";
     case "inside":
+    case "start":
+    case "end":
       return "move";
     default:
       return "default";
@@ -198,4 +198,22 @@ export function isElementInsideFrame(element, frame) {
   const { x1, y1, x2, y2 } = element;
   const { x1: frameX1, y1: frameY1, x2: frameX2, y2: frameY2 } = frame;
   return x1 >= frameX1 && y1 >= frameY1 && x2 <= frameX2 && y2 <= frameY2;
+}
+
+export function viewPaddings(element, frame) {
+  if (!element || !frame) return {};
+  const { x1, y1, x2, y2 } = element;
+  const { x1: frameX1, y1: frameY1, x2: frameX2, y2: frameY2 } = frame;
+
+  const paddingTop = Math.abs(frameY1 - y1);
+  const paddingBottom = Math.abs(y2 - frameY2);
+  const paddingLeft = Math.abs(frameX1 - x1);
+  const paddingRight = Math.abs(x2 - frameX2);
+
+  return {
+    paddingTop,
+    paddingBottom,
+    paddingLeft,
+    paddingRight,
+  };
 }

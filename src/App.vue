@@ -23,6 +23,10 @@ import IconUndo from './icons/IconUndo.vue';
 import IconRedo from './icons/IconRedo.vue';
 import IconImage from './icons/IconImage.vue';
 
+import Select from 'primevue/select';
+import Button from 'primevue/button';
+import InputNumber from 'primevue/inputnumber';
+
 String.prototype.toCapitalize = function () {
   return this.charAt(0).toUpperCase() + this.slice(1).toLowerCase();
 }
@@ -78,6 +82,12 @@ const lastHoveredElement = ref(null);
 const lastHoveredOriginalOptions = ref(null);
 const viewPaddingsPressed = ref(false);
 const zoomLevel = ref(1);
+const selectedExportType = ref(null);
+const exportTypes = [
+  { label: 'PNG', value: 'png' },
+  { label: 'JPEG', value: 'jpeg' },
+  { label: 'WEBP', value: 'webp' },
+];
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d');
@@ -140,14 +150,31 @@ watch(
   },
   { deep: true }
 );
-
-function zoomIn() {
-  zoomLevel.value = Math.min(zoomLevel.value + 0.1, 3);
-}
-
-function zoomOut() {
-  zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.5);
-}
+watch(
+  [
+    () => selectedElement2.value?.canvasShape?.width,
+    () => selectedElement2.value?.canvasShape?.height,
+  ],
+  ([newWidth, newHeight], [oldWidth, oldHeight]) => {
+    if (
+      selectedElement2.value &&
+      typeof selectedElement2.value.id === 'number' &&
+      selectedElement2.value.canvasShape &&
+      (newWidth !== oldWidth || newHeight !== oldHeight)
+    ) {
+      const idx = selectedElement2.value.id;
+      const currentElements = elements.value;
+      if (currentElements && currentElements[idx]) {
+        const { x1, y1, type, shapeNumber } = currentElements[idx];
+        const x2 = x1 + Number(newWidth);
+        const y2 = y1 + Number(newHeight);
+        updateElement(idx, x1, y1, x2, y2, type, shapeNumber, {
+          ...selectedElement2.value.canvasShape.options,
+        });
+      }
+    }
+  }, { deep: true },
+);
 
 const undoredo = (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') undo();
@@ -720,11 +747,16 @@ function handleAlign(align) {
 }
 
 function handleExport() {
-  let canvasUrl = canvas.value.toDataURL('image/png');
+  if (!selectedExportType.value) {
+    alert('Please select an export type');
+    return;
+  }
+
+  let canvasUrl = canvas.value.toDataURL(`image/${selectedExportType.value.value}`, 1.0);
   const createEl = document.createElement('a');
   createEl.href = canvasUrl;
 
-  createEl.download = 'canvas.png';
+  createEl.download = `canvas.${selectedExportType.value.value}`;
 
   createEl.click();
   createEl.remove();
@@ -752,8 +784,7 @@ function handleExport() {
     </div>
 
     <aside id="sidebar-left">
-      <h5>Elements</h5>
-      <p>Zoom level {{ parseInt(zoomLevel * 100) }}</p>
+      <h5>Layers</h5>
       <div v-for="el in layers" :key="el.id">
         <button @click="setSelectedElement(el)">
           {{ el.title }}
@@ -769,7 +800,12 @@ function handleExport() {
         </div>
       </div>
 
-      <button @click="handleExport">Export</button>
+      <div class="export-controls">
+        <Button @click="handleExport" label="Export" size="small" style="width: auto;" />
+
+        <Select v-model="selectedExportType" :options="exportTypes" optionLabel="label" :default-value="exportTypes[0]"
+          style="width: auto;" size="small" />
+      </div>
     </aside>
 
     <aside class="sidebar-right">
@@ -817,8 +853,10 @@ function handleExport() {
 
       <!-- rectangle, ellipse -->
       <div v-else-if="selectedElement2 && selectedElement2.type !== 'line' && selectedElement2.type !== 'text'"
-        class="sidebar-right-content">
-        <span>{{ selectedElement2.type.toCapitalize() }}</span>
+        class="sidebar-right__rectangle">
+        <h5>{{ selectedElement2.type.toCapitalize() }}</h5>
+
+        <!-- alignment -->
         <div class="sidebar-right-content_alignment">
           <h5>Alignment</h5>
           <div class="sidebar-right-content_alignment_items">
@@ -832,6 +870,8 @@ function handleExport() {
             <button @click="handleAlign('bottom-ver')">Bottom |</button>
           </div>
         </div>
+
+        <!-- position -->
         <div class="sidebar-right-content_position">
           <h5>Position</h5>
           <div class="sidebar-right-content_position_items">
@@ -839,43 +879,69 @@ function handleExport() {
             <p>Y: {{ parseInt(selectedElement2.canvasShape.y) }}</p>
           </div>
         </div>
-        <div class="sidebar-right-content_layout">
-          <h5>Layout</h5>
-          <div class="sidebar-right-content_layout_items">
+
+        <!-- layout -->
+        <div class="sidebar-right__rectangle-styles">
+          <h5>Styles</h5>
+          <div class="sidebar-right__rectangle-styles-dimensions">
+            <label for="">
+              Width:
+              <InputNumber :value="selectedElement2.canvasShape.options.width"
+                @input="e => { selectedElement2.canvasShape.width = e.target.value }" inputId="integeronly" fluid />
+            </label>
             <p>Width: {{ parseInt(selectedElement2.canvasShape.width) }}</p>
             <p>Height: {{ parseInt(selectedElement2.canvasShape.height) }}</p>
           </div>
-          <div class="sidebar-right-content_layout_items">
-            <label for="fillStyle">Fill Style</label>
-            <input id="fillStyle" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
-              @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }" />
+
+          <!-- rectangle fill style -->
+          <div class="sidebar-right__rectangle-styles-background">
+            <label for="rectCircBgColor" style="font-size: 14px;">Fill Style</label>
+            <div @click="$refs.rectCircBgColor.click()">
+              <span>{{ selectedElement2.canvasShape.options.fillStyle }}</span>
+              <input id="rectCircBgColor" type="color" :value="selectedElement2.canvasShape.options.fillStyle"
+                @input="e => { selectedElement2.canvasShape.options.fillStyle = e.target.value }"
+                style="background: transparent;" ref="rectCircBgColor" @click.stop />
+            </div>
           </div>
-          <div class="sidebar-right-content_layout_items">
-            <label for="strokeStyle">Stroke Style</label>
-            <input id="strokeStyle" type="color" :value="selectedElement2.canvasShape.options.strokeStyle"
-              @input="e => { selectedElement2.canvasShape.options.strokeStyle = e.target.value }" />
+
+          <!-- rectangle stroke style -->
+          <div class="sidebar-right__rectangle-styles-stroke">
+            <label for="rectCircStroke" style="font-size: 14px;">Stroke Style</label>
+            <div @click="$refs.rectCircStroke.click()">
+              <span>{{ selectedElement2.canvasShape.options.strokeStyle }}</span>
+              <input id="rectCircStroke" type="color" :value="selectedElement2.canvasShape.options.strokeStyle"
+                @input="e => { selectedElement2.canvasShape.options.strokeStyle = e.target.value }"
+                style="background: transparent;" ref="rectCircStroke" @click.stop />
+            </div>
           </div>
         </div>
+
+        <!-- border radius -->
         <div>
           <label for="borderRadius">Border Radius</label>
-          <input id="borderRadius" type="number" :value="selectedElement2.canvasShape.options.borderRadius"
-            @input="e => { selectedElement2.canvasShape.options.borderRadius = e.target.value }" />
+          <InputNumber id="borderRadius" v-model="selectedElement2.canvasShape.options.borderRadius"
+            inputId="integeronly" fluid size="small" />
         </div>
-
       </div>
 
-      <!-- canvas -->
-      <div v-else class="sidebar-right-content">
-        <span>Canvas</span>
+      <!-- Page styles -->
+      <div v-else class="sidebar-right__page">
+        <h5>Page</h5>
 
-        <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div class="sidebar-right__page-background">
           <label for="bgColor" style="font-size: 14px;">Background Color</label>
-          <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }"
-            style="background: transparent;" />
+          <div @click="$refs.bgColorInput.click()">
+            <span>{{ canvaBgColor }}</span>
+            <input id="bgColor" type="color" :value="canvaBgColor" @input="e => { canvaBgColor = e.target.value }"
+              style="background: transparent;" ref="bgColorInput" @click.stop />
+          </div>
         </div>
-
       </div>
 
+      <!-- Zoom controls -->
+      <div style="margin-top: auto;">
+        <p style="font-size: 14px;">Zoom level: {{ parseInt(zoomLevel * 100) }}</p>
+      </div>
     </aside>
 
     <canvas id="canvas" ref="canvas" :style="{ backgroundColor: canvaBgColor }"></canvas>
@@ -921,16 +987,25 @@ function handleExport() {
 
   button {
     color: white;
+    font-size: 12px;
     text-align: start;
 
     width: 100%;
-    padding: 7px 10.5px;
+    padding: 4px 10.5px;
 
-    border-radius: 6px;
+    border-radius: 4px;
 
     &:hover {
       background-color: oklch(37% 0.013 285.805);
     }
+  }
+
+  .export-controls {
+    margin-top: auto;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 }
 
@@ -940,6 +1015,11 @@ function handleExport() {
   padding: 16px;
   background-color: oklch(27.4% 0.006 286.033);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
   position: absolute;
   top: 0px;
   right: 0px;
@@ -979,6 +1059,91 @@ function handleExport() {
           &:hover {
             background-color: oklch(37% 0.013 285.805);
           }
+        }
+      }
+    }
+  }
+
+  &__rectangle {
+
+    &-styles {
+
+      &-background,
+      &-stroke {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+
+        &>div {
+          padding: 4px 10.5px;
+          border-radius: 6px;
+
+          display: flex;
+          align-items: center;
+          gap: 4px;
+
+          cursor: pointer;
+
+          &:hover {
+            background-color: oklch(37% 0.013 285.805);
+          }
+
+          input {
+            width: 16px;
+            height: 16px;
+            border: none;
+            outline: none;
+          }
+
+          span {
+            font-size: 12px;
+            font-weight: 400;
+          }
+        }
+      }
+    }
+  }
+
+  &__page {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    h5 {
+      margin-bottom: 0;
+    }
+
+    &-background {
+      width: 100%;
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      &>div {
+        padding: 4px 10.5px;
+        border-radius: 6px;
+
+        display: flex;
+        align-items: center;
+        gap: 4px;
+
+        cursor: pointer;
+
+        &:hover {
+          background-color: oklch(37% 0.013 285.805);
+        }
+
+        input {
+          width: 16px;
+          height: 16px;
+          border: none;
+          outline: none;
+        }
+
+        span {
+          font-size: 12px;
+          font-weight: 400;
         }
       }
     }

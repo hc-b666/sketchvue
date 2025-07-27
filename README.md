@@ -1,4 +1,4 @@
-# 🖌️ Mini Figma Clone
+# 🖌️ Sketchvue
 
 A small Figma-like app built with **Vue 3**.
 This project was created as a learning experiment to understand and explore the **HTML5 Canvas API** and how to integrate it with **Vue 3's** reactivity system.

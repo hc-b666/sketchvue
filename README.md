@@ -27,7 +27,7 @@ The goal of this project was to:
 
 ## 📸 Screenshot
 
-Coming soon...
+![Screenshot](./public/screenshot.png)
 
 ## 📦 Getting Started
 
